@@ -1,0 +1,17 @@
+node_modules/
+dist/
+electron-dist/
+release/
+.cache/
+*.local
+.DS_Store
+
+database/*.db
+database/*.db-*
+cache/
+exports/*
+!exports/.gitkeep
+
+src-tauri/target/
+
+*.log
