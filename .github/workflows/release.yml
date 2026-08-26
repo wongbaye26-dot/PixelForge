@@ -1,63 +1,70 @@
-name: Release
+name: Build & Release
 
 on:
   push:
     tags:
-      - 'v*.*.*'
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Version tag (e.g. v1.3.0)'
+        required: true
 
 permissions:
   contents: write
 
 jobs:
-  build:
-    name: Build (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-latest, windows-latest]
+  build-mac:
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 20
           cache: npm
-
-      - name: Install
-        run: npm ci
-
-      - name: Build (macOS)
-        if: runner.os == 'macOS'
-        run: npm run build:worker && npm run build:web && npx electron-builder --mac --publish=never
-
-      - name: Build (Windows)
-        if: runner.os == 'Windows'
-        run: npm run build:worker && npm run build:web && npx electron-builder --win --x64 --publish=never
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+      - run: npm ci
+      - run: npm run build:mac
+      - uses: actions/upload-artifact@v4
         with:
-          name: ${{ runner.os }}-artifacts
+          name: mac-dmg
           path: |
             release/*.dmg
-            release/*.dmg.blockmap
-            release/*-win.zip
-          if-no-files-found: error
+            release/*.blockmap
+          retention-days: 5
+
+  build-win:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build:win
+      - uses: actions/upload-artifact@v4
+        with:
+          name: win-zip
+          path: release/*.zip
+          retention-days: 5
 
   release:
-    name: Create GitHub Release
-    needs: build
+    needs: [build-mac, build-win]
     runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     steps:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
-
-      - name: Create release
+      - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: "PixelForge ${{ github.event.inputs.tag || github.ref_name }}"
+          draft: false
+          prerelease: false
+          generate_release_notes: true
           files: |
-            artifacts/**/*.dmg
-            artifacts/**/*.dmg.blockmap
-            artifacts/**/*-win.zip
+            artifacts/mac-dmg/*.dmg
+            artifacts/mac-dmg/*.blockmap
+            artifacts/win-zip/*.zip
