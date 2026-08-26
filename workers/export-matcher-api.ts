@@ -7,10 +7,17 @@ import type Database from 'better-sqlite3'
 import { CACHE_DIR } from './thumbnail.js'
 import { getExportsDir } from './paths.js'
 import { getStoredExportDir } from './settings.js'
-import { processAndExport } from './image-processor.js'
+import { processAndExport, type ProcessOptions } from './image-processor.js'
+import {
+  bestCandidateForTarget,
+  type MatchCandidate,
+  type MatchStrategy,
+} from '../src/core/match-scoring.js'
 import type { ExportFormat, FitMode } from '../src/types/index.js'
+import { uid, json, readBody } from './utils.js'
+import { resolveWorkerFile } from './resolve-worker.js'
 
-type ExportMatcherStatus = 'pending' | 'processing' | 'done' | 'error'
+type ExportMatcherStatus = 'pending' | 'processing' | 'done' | 'error' | 'cancelled'
 
 type ExportMatcherJob = {
   id: string
@@ -24,8 +31,8 @@ type ExportMatcherJob = {
   imageRatio: number
   similarity: number
   recommendedMode: FitMode
-  matchScore?: MatchScore
-  debugCandidates?: MatchDebugCandidate[]
+  matchScore?: import('../src/core/match-scoring.js').MatchScore
+  debugCandidates?: import('../src/core/match-scoring.js').MatchDebugCandidate[]
   status: ExportMatcherStatus
   progress: number
   outputPath?: string
@@ -33,66 +40,22 @@ type ExportMatcherJob = {
   error?: string
 }
 
-function uid(prefix: string): string {
-  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`
+type BatchExportOptions = {
+  outputDir: string
+  format: ExportFormat
+  quality: number
+  targetSizeKb?: number
+  namingPattern: string
+  autoCompressOptimize: boolean
 }
 
-function json(res: import('node:http').ServerResponse, data: unknown, status = 200) {
-  res.writeHead(status, { 'Content-Type': 'application/json' })
-  res.end(JSON.stringify(data))
+type JobBatch = {
+  jobs: ExportMatcherJob[]
+  options: BatchExportOptions
+  cancelled: boolean
 }
 
-async function readBody(req: import('node:http').IncomingMessage): Promise<unknown> {
-  const chunks: Buffer[] = []
-  for await (const chunk of req) chunks.push(chunk as Buffer)
-  if (chunks.length === 0) return {}
-  try {
-    return JSON.parse(Buffer.concat(chunks).toString('utf8'))
-  } catch {
-    return {}
-  }
-}
-
-function binarySearchNearestByRatio(rows: Array<{ ratio: number }>, target: number): number {
-  let lo = 0
-  let hi = rows.length - 1
-  while (lo <= hi) {
-    const mid = (lo + hi) >> 1
-    const v = rows[mid]!.ratio
-    if (v === target) return mid
-    if (v < target) lo = mid + 1
-    else hi = mid - 1
-  }
-  if (lo <= 0) return 0
-  if (lo >= rows.length) return rows.length - 1
-  const a = rows[lo - 1]!.ratio
-  const b = rows[lo]!.ratio
-  return Math.abs(a - target) <= Math.abs(b - target) ? lo - 1 : lo
-}
-
-type MatchScore = {
-  ratioScore: number
-  sizeScore: number
-  upscalePenalty: number
-  oversizePenalty: number
-  finalScore: number
-}
-
-type MatchDebugCandidate = {
-  imageId: number
-  width: number
-  height: number
-  ratio: number
-  area: number
-  score: MatchScore
-}
-
-type MatchStrategy = {
-  avoidUpscale: boolean
-  preferSlightDownscale: boolean
-  avoidOversize: boolean
-  highQualityFirst: boolean
-}
+const matcherWorkerFile = resolveWorkerFile('export-matcher')
 
 async function isColorSimple(inputPath: string): Promise<boolean> {
   const buf = await sharp(inputPath, { animated: false, pages: 1, limitInputPixels: false })
@@ -135,107 +98,85 @@ async function recommendMode(
   return simple ? 'gradient_fill' : 'blur_extend'
 }
 
-function calculateMatchScore(
-  image: { ratio: number; width: number; height: number; area: number },
-  target: { ratio: number; width: number; height: number; area: number },
-  strategy: MatchStrategy,
-): MatchScore {
-  const ratioDiff = Math.abs(image.ratio - target.ratio)
-  const widthDiff = Math.abs(target.width - image.width)
-  const heightDiff = Math.abs(target.height - image.height)
-  const sizeDiff = (widthDiff + heightDiff) / 2
-
-  let upscalePenalty = 0
-  const needsUpscale = image.width < target.width || image.height < target.height
-  if (strategy.avoidUpscale && needsUpscale) upscalePenalty += 1000
-
-  const scaleRatio = image.area / target.area
-  let oversizePenalty = 0
-  if (strategy.avoidOversize && scaleRatio > 5) {
-    oversizePenalty += scaleRatio * 10
-  } else if (strategy.preferSlightDownscale && scaleRatio > 3) {
-    oversizePenalty += (scaleRatio - 3) * 5
-  }
-
-  let ratioPenalty = 0
-  if (ratioDiff > 0.15) {
-    ratioPenalty += (ratioDiff - 0.15) * 1000
-  }
-
-  const ratioWeight = 0.65
-  const sizeWeight = 0.35
-  const finalScore =
-    ratioDiff * ratioWeight +
-    sizeDiff * sizeWeight +
-    upscalePenalty +
-    oversizePenalty +
-    ratioPenalty
-
-  return {
-    ratioScore: ratioDiff,
-    sizeScore: sizeDiff,
-    upscalePenalty,
-    oversizePenalty,
-    finalScore,
-  }
-}
-
-function bestCandidateForTarget(
-  candidates: Array<{ id: number; path: string; filename: string; ratio: number; width: number; height: number; area: number }>,
-  target: { width: number; height: number; ratio: number; area: number },
-  used: Set<number>,
-  strategy: MatchStrategy,
-): { best: MatchDebugCandidate | null; debug: MatchDebugCandidate[] } {
-  const scored: MatchDebugCandidate[] = []
-  for (const c of candidates) {
-    if (used.has(c.id)) continue
-    const score = calculateMatchScore(
-      { ratio: c.ratio, width: c.width, height: c.height, area: c.area },
-      target,
-      strategy,
-    )
-    scored.push({
-      imageId: c.id,
-      width: c.width,
-      height: c.height,
-      ratio: c.ratio,
-      area: c.area,
-      score,
-    })
-  }
-
-  const hasNoUpscale = scored.some((s) => s.width >= target.width && s.height >= target.height)
-  const filtered =
-    strategy.highQualityFirst && hasNoUpscale
-      ? scored.filter((s) => s.width >= target.width && s.height >= target.height)
-      : scored
-
-  filtered.sort((a, b) => a.score.finalScore - b.score.finalScore)
-  return { best: filtered[0] ?? null, debug: filtered.slice(0, 8) }
-}
-
-const jobBatches = new Map<string, { jobs: ExportMatcherJob[] }>()
+const jobBatches = new Map<string, JobBatch>()
 const exportQueue = new PQueue({ concurrency: 2 })
 
-declare const __dirname: string | undefined
-const RUNTIME_DIR = typeof __dirname === 'string' ? __dirname : process.cwd()
+const matcherPool = matcherWorkerFile
+  ? new Piscina<ProcessOptions, { outputPath: string }>({ filename: matcherWorkerFile, minThreads: 1, maxThreads: 4 })
+  : null
 
-function resolveMatcherWorkerFile(): string | null {
-  const candidates = [
-    path.join(RUNTIME_DIR, 'export-matcher-processor.cjs'),
-    path.join(RUNTIME_DIR, '..', 'electron-dist', 'export-matcher-processor.cjs'),
-    path.join(process.cwd(), 'electron-dist', 'export-matcher-processor.cjs'),
-  ]
-  for (const p of candidates) {
-    if (existsSync(p)) return p
+async function runJobExport(job: ExportMatcherJob, options: BatchExportOptions, index: number) {
+  const batch = jobBatches.get(job.batchId)
+  if (!batch || batch.cancelled || job.status === 'cancelled') {
+    job.status = 'cancelled'
+    job.progress = 100
+    return
   }
-  return null
+
+  job.status = 'processing'
+  job.progress = 15
+  job.error = undefined
+  try {
+    job.progress = 35
+    const targetSizeKb = options.autoCompressOptimize ? options.targetSizeKb : undefined
+    const outputPath = matcherPool
+      ? (
+          await matcherPool.run({
+            inputPath: job.imagePath,
+            outputDir: options.outputDir,
+            width: job.targetWidth,
+            height: job.targetHeight,
+            format: options.format,
+            fitMode: job.recommendedMode,
+            quality: options.quality,
+            targetSizeKb,
+            namingPattern: options.namingPattern,
+            index: index + 1,
+          })
+        ).outputPath
+      : await processAndExport({
+          inputPath: job.imagePath,
+          outputDir: options.outputDir,
+          width: job.targetWidth,
+          height: job.targetHeight,
+          format: options.format,
+          fitMode: job.recommendedMode,
+          quality: options.quality,
+          targetSizeKb,
+          namingPattern: options.namingPattern,
+          index: index + 1,
+        })
+    job.outputPath = outputPath
+    job.status = 'done'
+    job.progress = 100
+  } catch (e) {
+    job.status = 'error'
+    job.progress = 100
+    job.error = e instanceof Error ? e.message : String(e)
+  }
 }
 
-const matcherWorkerFile = resolveMatcherWorkerFile()
-const matcherPool = matcherWorkerFile
-  ? new Piscina({ filename: matcherWorkerFile, minThreads: 1, maxThreads: 4 })
-  : null
+function queueJobExport(job: ExportMatcherJob, options: BatchExportOptions, index: number) {
+  void exportQueue.add(async () => runJobExport(job, options, index))
+}
+
+function getBatchOr404(batchId: string, res: import('node:http').ServerResponse): JobBatch | null {
+  const batch = jobBatches.get(batchId)
+  if (!batch) {
+    json(res, { error: '未找到批次' }, 404)
+    return null
+  }
+  return batch
+}
+
+function getJobOr404(batch: JobBatch, jobId: string, res: import('node:http').ServerResponse): ExportMatcherJob | null {
+  const job = batch.jobs.find((j) => j.id === jobId)
+  if (!job) {
+    json(res, { error: '未找到任务' }, 404)
+    return null
+  }
+  return job
+}
 
 export async function handleExportMatcherApi(
   req: import('node:http').IncomingMessage,
@@ -262,11 +203,13 @@ export async function handleExportMatcherApi(
       highQualityFirst?: boolean
       debugMode?: boolean
       candidateAssetIds?: number[]
+      scopeType?: 'all' | 'folder' | 'favorite' | 'recent'
+      scopeId?: number
     }
 
     const sizes = (body.sizes ?? []).filter((s) => s && s.width > 0 && s.height > 0)
     if (!sizes.length) {
-      json(res, { error: 'sizes required' }, 400)
+      json(res, { error: '缺少尺寸信息' }, 400)
       return true
     }
 
@@ -288,41 +231,54 @@ export async function handleExportMatcherApi(
     const debugMode = body.debugMode === true
 
     const used = new Set<number>()
-
     const batchId = uid('match')
     const jobs: ExportMatcherJob[] = []
+    const unmatchedSizes: Array<{ width: number; height: number }> = []
 
     const candidateAssetIds = (body.candidateAssetIds ?? []).filter((n) => Number.isFinite(n) && n > 0)
     const canRestrict = candidateAssetIds.length > 0 && candidateAssetIds.length <= 5000
-    const byRatioWindow = db.prepare(
-      `SELECT id, path, filename, ratio, width, height, COALESCE(area, width * height) AS area
-       FROM assets
-       WHERE ratio BETWEEN ? AND ?
-       ORDER BY ratio ASC
-       LIMIT ?`,
-    )
 
-    let restrictedRows:
-      | Array<{ id: number; path: string; filename: string; ratio: number; width: number; height: number; area: number }>
-      | null = null
+    const scopeSqlExtra: { clause: string; params: unknown[] } = (() => {
+      const scopeType = body.scopeType
+      if (scopeType === 'folder' && body.scopeId != null) {
+        return { clause: 'AND folder_id = ?', params: [body.scopeId] }
+      }
+      if (scopeType === 'favorite') {
+        return { clause: 'AND favorite = 1', params: [] }
+      }
+      if (scopeType === 'recent') {
+        return {
+          clause: `AND id IN (
+            SELECT id
+            FROM assets
+            ORDER BY datetime(created_at) DESC, id DESC
+            LIMIT 500
+          )`,
+          params: [],
+        }
+      }
+      return { clause: '', params: [] }
+    })()
+
+    const baseSql = `SELECT id, path, filename, ratio, width, height, COALESCE(area, width * height) AS area
+       FROM assets
+       WHERE ratio BETWEEN ? AND ? AND deleted_at IS NULL`
+
+    const queryByRatio = scopeSqlExtra.clause
+      ? db.prepare(`${baseSql} ${scopeSqlExtra.clause} ORDER BY ratio ASC LIMIT ?`)
+      : db.prepare(`${baseSql} ORDER BY ratio ASC LIMIT ?`)
+
+    let restrictedRows: MatchCandidate[] | null = null
     if (canRestrict) {
       const placeholders = candidateAssetIds.map(() => '?').join(',')
       restrictedRows = db
         .prepare(
           `SELECT id, path, filename, ratio, width, height, COALESCE(area, width * height) AS area
            FROM assets
-           WHERE id IN (${placeholders})
+           WHERE id IN (${placeholders}) AND deleted_at IS NULL
            ORDER BY ratio ASC`,
         )
-        .all(...candidateAssetIds) as Array<{
-        id: number
-        path: string
-        filename: string
-        ratio: number
-        width: number
-        height: number
-        area: number
-      }>
+        .all(...candidateAssetIds) as MatchCandidate[]
     }
 
     const restrictedById = restrictedRows ? new Map(restrictedRows.map((r) => [r.id, r])) : null
@@ -331,7 +287,7 @@ export async function handleExportMatcherApi(
       const targetRatio = s.width / s.height
       const target = { width: s.width, height: s.height, ratio: targetRatio, area: s.width * s.height }
 
-      let candidates: Array<{ id: number; path: string; filename: string; ratio: number; width: number; height: number; area: number }> = []
+      let candidates: MatchCandidate[] = []
       if (restrictedRows) {
         candidates = restrictedRows
       } else {
@@ -340,15 +296,7 @@ export async function handleExportMatcherApi(
         for (let pass = 0; pass < 5; pass++) {
           const lo = Math.max(0.01, targetRatio - window)
           const hi = targetRatio + window
-          const rows = byRatioWindow.all(lo, hi, limit) as Array<{
-            id: number
-            path: string
-            filename: string
-            ratio: number
-            width: number
-            height: number
-            area: number
-          }>
+          const rows = queryByRatio.all(lo, hi, ...scopeSqlExtra.params, limit) as MatchCandidate[]
           candidates = rows
           if (candidates.length >= 48) break
           window *= 1.7
@@ -357,14 +305,20 @@ export async function handleExportMatcherApi(
       }
 
       const { best, debug } = bestCandidateForTarget(candidates, target, used, strategy)
-      if (!best) continue
+      if (!best) {
+        unmatchedSizes.push({ width: s.width, height: s.height })
+        continue
+      }
       used.add(best.imageId)
 
       const asset = restrictedById
         ? restrictedById.get(best.imageId)!
         : candidates.find((c) => c.id === best.imageId)
 
-      if (!asset) continue
+      if (!asset) {
+        unmatchedSizes.push({ width: s.width, height: s.height })
+        continue
+      }
 
       const recommendedMode = autoRecommendMode
         ? await recommendMode(targetRatio, asset.ratio, asset.path, autoBackgroundOptimize)
@@ -389,61 +343,27 @@ export async function handleExportMatcherApi(
       })
     }
 
-    jobBatches.set(batchId, { jobs })
+    const options: BatchExportOptions = {
+      outputDir,
+      format,
+      quality,
+      targetSizeKb: body.targetSizeKb,
+      namingPattern,
+      autoCompressOptimize,
+    }
 
-    void exportQueue.addAll(
-      jobs.map((job, index) => async () => {
-        job.status = 'processing'
-        job.progress = 15
-        try {
-          job.progress = 35
-          const targetSizeKb = autoCompressOptimize ? body.targetSizeKb : undefined
-          const outputPath = matcherPool
-            ? (
-                await matcherPool.run({
-                  inputPath: job.imagePath,
-                  outputDir,
-                  width: job.targetWidth,
-                  height: job.targetHeight,
-                  format,
-                  fitMode: job.recommendedMode,
-                  quality,
-                  targetSizeKb,
-                  namingPattern,
-                  index: index + 1,
-                } as any)
-              ).outputPath
-            : await processAndExport({
-                inputPath: job.imagePath,
-                outputDir,
-                width: job.targetWidth,
-                height: job.targetHeight,
-                format,
-                fitMode: job.recommendedMode,
-                quality,
-                targetSizeKb,
-                namingPattern,
-                index: index + 1,
-              })
-          job.outputPath = outputPath
-          job.status = 'done'
-          job.progress = 100
-        } catch (e) {
-          job.status = 'error'
-          job.progress = 100
-          job.error = e instanceof Error ? e.message : String(e)
-        }
-      }),
-    )
+    jobBatches.set(batchId, { jobs, options, cancelled: false })
 
-    json(res, { batchId, jobs })
+    jobs.forEach((job, index) => queueJobExport(job, options, index))
+
+    json(res, { batchId, jobs, unmatchedSizes })
     return true
   }
 
   if (req.method === 'GET' && pathname === '/api/auto-match/jobs') {
     const batchId = url.searchParams.get('batchId')?.trim()
     if (!batchId) {
-      json(res, { error: 'batchId required' }, 400)
+      json(res, { error: '缺少 batchId 参数' }, 400)
       return true
     }
     const batch = jobBatches.get(batchId)
@@ -452,6 +372,116 @@ export async function handleExportMatcherApi(
       return true
     }
     json(res, { jobs: batch.jobs })
+    return true
+  }
+
+  if (req.method === 'POST' && pathname === '/api/auto-match/cancel') {
+    const body = (await readBody(req)) as { batchId?: string; jobId?: string }
+    const batchId = body.batchId?.trim()
+    if (!batchId) {
+      json(res, { error: '缺少 batchId 参数' }, 400)
+      return true
+    }
+    const batch = getBatchOr404(batchId, res)
+    if (!batch) return true
+
+    if (body.jobId) {
+      const job = getJobOr404(batch, body.jobId, res)
+      if (!job) return true
+      if (job.status === 'pending') {
+        job.status = 'cancelled'
+        job.progress = 100
+      }
+    } else {
+      batch.cancelled = true
+      for (const job of batch.jobs) {
+        if (job.status === 'pending') {
+          job.status = 'cancelled'
+          job.progress = 100
+        }
+      }
+    }
+    json(res, { jobs: batch.jobs })
+    return true
+  }
+
+  if (req.method === 'POST' && pathname === '/api/auto-match/retry') {
+    const body = (await readBody(req)) as { batchId?: string; jobId?: string }
+    const batchId = body.batchId?.trim()
+    const jobId = body.jobId?.trim()
+    if (!batchId || !jobId) {
+      json(res, { error: '缺少 batchId 和 jobId 参数' }, 400)
+      return true
+    }
+    const batch = getBatchOr404(batchId, res)
+    if (!batch) return true
+    const job = getJobOr404(batch, jobId, res)
+    if (!job) return true
+    if (job.status !== 'error' && job.status !== 'cancelled') {
+      json(res, { error: '仅失败或已取消的任务可以重试' }, 400)
+      return true
+    }
+    batch.cancelled = false
+    job.status = 'pending'
+    job.progress = 0
+    job.error = undefined
+    job.outputPath = undefined
+    const index = batch.jobs.findIndex((j) => j.id === job.id)
+    queueJobExport(job, batch.options, Math.max(0, index))
+    json(res, { job })
+    return true
+  }
+
+  if (req.method === 'POST' && pathname === '/api/auto-match/swap') {
+    const body = (await readBody(req)) as {
+      batchId?: string
+      jobId?: string
+      assetId?: number
+      autoRecommendMode?: boolean
+      autoBackgroundOptimize?: boolean
+    }
+    const batchId = body.batchId?.trim()
+    const jobId = body.jobId?.trim()
+    const assetId = Number(body.assetId)
+    if (!batchId || !jobId || !assetId) {
+      json(res, { error: '缺少 batchId、jobId 和 assetId 参数' }, 400)
+      return true
+    }
+    const batch = getBatchOr404(batchId, res)
+    if (!batch) return true
+    const job = getJobOr404(batch, jobId, res)
+    if (!job) return true
+
+    const row = db
+      .prepare(
+        `SELECT id, path, filename, ratio, width, height, COALESCE(area, width * height) AS area
+         FROM assets WHERE id = ? AND deleted_at IS NULL`,
+      )
+      .get(assetId) as MatchCandidate | undefined
+    if (!row || !existsSync(row.path)) {
+      json(res, { error: '未找到图片' }, 404)
+      return true
+    }
+
+    const autoRecommendMode = body.autoRecommendMode !== false
+    const autoBackgroundOptimize = body.autoBackgroundOptimize !== false
+    const recommendedMode = autoRecommendMode
+      ? await recommendMode(job.targetRatio, row.ratio, row.path, autoBackgroundOptimize)
+      : job.recommendedMode
+
+    job.imageId = row.id
+    job.imagePath = row.path
+    job.imageFilename = row.filename
+    job.imageRatio = row.ratio
+    job.recommendedMode = recommendedMode
+    job.status = 'pending'
+    job.progress = 0
+    job.error = undefined
+    job.outputPath = undefined
+
+    const index = batch.jobs.findIndex((j) => j.id === job.id)
+    queueJobExport(job, batch.options, Math.max(0, index))
+    json(res, { job })
     return true
   }
 
@@ -468,13 +498,15 @@ export async function handleExportMatcherApi(
     const mode = (body.mode ?? 'contain') as FitMode
 
     if (!assetId || !targetWidth || !targetHeight) {
-      json(res, { error: 'assetId/targetWidth/targetHeight required' }, 400)
+      json(res, { error: '缺少 assetId/targetWidth/targetHeight 参数' }, 400)
       return true
     }
 
-    const row = db.prepare(`SELECT path FROM assets WHERE id = ?`).get(assetId) as { path: string } | undefined
+    const row = db.prepare(`SELECT path FROM assets WHERE id = ? AND deleted_at IS NULL`).get(assetId) as
+      | { path: string }
+      | undefined
     if (!row || !existsSync(row.path)) {
-      json(res, { error: 'asset not found' }, 404)
+      json(res, { error: '未找到图片' }, 404)
       return true
     }
 
@@ -490,7 +522,7 @@ export async function handleExportMatcherApi(
             quality: 85,
             namingPattern: `auto_preview_{name}_{size}.{format}`,
             index: 1,
-          } as any)
+          })
         ).outputPath
       : await processAndExport({
           inputPath: row.path,

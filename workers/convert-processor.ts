@@ -2,6 +2,8 @@ import { existsSync, mkdirSync, statSync } from 'node:fs'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import sharp from 'sharp'
+import { clamp } from './utils.js'
+import { avifEncodeOptions, jpegEncodeOptions, pngEncodeOptions, webpEncodeOptions } from './encode-utils.js'
 
 export type ConvertTargetFormat = 'png' | 'webp' | 'avif' | 'jpg' | 'jpeg'
 
@@ -21,10 +23,6 @@ export interface ConvertProcessorOutput {
   height?: number
 }
 
-function clamp(n: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, n))
-}
-
 function runFfmpegGifToWebp(inputPath: string, outputPath: string, quality: number): void {
   const q = clamp(quality, 1, 100)
   const ff = spawnSync(
@@ -33,7 +31,7 @@ function runFfmpegGifToWebp(inputPath: string, outputPath: string, quality: numb
     { stdio: 'ignore' },
   )
   if (ff.status !== 0 || !existsSync(outputPath)) {
-    throw new Error('ffmpeg convert failed')
+    throw new Error('FFmpeg 转换失败')
   }
 }
 
@@ -57,18 +55,18 @@ export default async function convertOne(input: ConvertProcessorInput): Promise<
 
   switch (target) {
     case 'png':
-      pipeline = pipeline.png({ compressionLevel: 9 })
+      pipeline = pipeline.png(pngEncodeOptions())
       break
     case 'webp':
-      pipeline = pipeline.webp({ quality: q, effort: 4 })
+      pipeline = pipeline.webp(webpEncodeOptions(q))
       break
     case 'avif':
-      pipeline = pipeline.avif({ quality: q, effort: 4 })
+      pipeline = pipeline.avif(avifEncodeOptions(q))
       break
     case 'jpg':
     case 'jpeg':
     default:
-      pipeline = pipeline.jpeg({ quality: q, mozjpeg: true })
+      pipeline = pipeline.jpeg(jpegEncodeOptions(q, true))
       break
   }
 

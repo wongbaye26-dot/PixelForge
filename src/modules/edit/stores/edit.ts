@@ -3,17 +3,16 @@ import { computed, ref, watch } from 'vue'
 import { useLibraryStore } from '@/stores/library'
 import { resolveMediaUrl } from '@/utils/media-url'
 import type { EditParams } from '../types'
-import { requestEditPreview } from '../workers/edit-worker'
+import { requestEditPreview, requestEditExport } from '../workers/edit-worker'
 
-function clamp(n: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, n))
-}
+import { clamp } from '@/core/math'
 
 export const useEditStore = defineStore('edit', () => {
   const library = useLibraryStore()
 
   const activeId = ref<number | null>(null)
   const generating = ref(false)
+  const exporting = ref(false)
   const previewName = ref<string | null>(null)
 
   const params = ref<EditParams>({
@@ -52,16 +51,7 @@ export const useEditStore = defineStore('edit', () => {
 
     generating.value = true
     try {
-      const safe = {
-        ...params.value,
-        maxSize: clamp(params.value.maxSize, 256, 2048),
-        cornerRadius: clamp(params.value.cornerRadius, 0, 9999),
-        strokeWidth: clamp(params.value.strokeWidth, 0, 200),
-        shadowBlur: clamp(params.value.shadowBlur, 0, 200),
-        shadowOffsetX: clamp(params.value.shadowOffsetX, -200, 200),
-        shadowOffsetY: clamp(params.value.shadowOffsetY, -200, 200),
-      }
-      const r = await requestEditPreview(asset.id, safe)
+      const r = await requestEditPreview(asset.id, safeParams())
       previewName.value = r.previewName
     } finally {
       generating.value = false
@@ -73,6 +63,35 @@ export const useEditStore = defineStore('edit', () => {
     t = window.setTimeout(() => {
       void generatePreview()
     }, 250)
+  }
+
+  function safeParams(): EditParams {
+    return {
+      ...params.value,
+      maxSize: clamp(params.value.maxSize, 256, 2048),
+      cornerRadius: clamp(params.value.cornerRadius, 0, 9999),
+      strokeWidth: clamp(params.value.strokeWidth, 0, 200),
+      shadowBlur: clamp(params.value.shadowBlur, 0, 200),
+      shadowOffsetX: clamp(params.value.shadowOffsetX, -200, 200),
+      shadowOffsetY: clamp(params.value.shadowOffsetY, -200, 200),
+    }
+  }
+
+  async function exportImages(assetIds?: number[]) {
+    const ids = assetIds?.length
+      ? assetIds
+      : activeId.value
+        ? [activeId.value]
+        : [...library.selectedIds]
+
+    if (!ids.length) return null
+
+    exporting.value = true
+    try {
+      return await requestEditExport(ids, safeParams())
+    } finally {
+      exporting.value = false
+    }
   }
 
   watch(
@@ -91,8 +110,10 @@ export const useEditStore = defineStore('edit', () => {
     afterSrc,
     previewName,
     generating,
+    exporting,
     setActive,
     generatePreview,
+    exportImages,
   }
 })
 

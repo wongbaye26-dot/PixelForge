@@ -1,34 +1,33 @@
 import { api } from '@/api/client'
-import type { CompressJob, CompressOutputFormat } from '../types'
+import type { CompressJob } from '../types'
+import { createModuleWorker } from '@/core/module-worker'
 
-export async function submitCompress(payload: {
-  assetIds: number[]
-  outputFormat?: CompressOutputFormat
-  quality: number
-  targetSizeKb?: number
-  mozjpeg?: boolean
-  usePngquant?: boolean
-  outputDir?: string
-  namingPattern?: string
-}): Promise<{ batchId: string; jobIds: string[] }> {
-  const r = await api.compressSubmit(payload)
-  return { batchId: r.batchId, jobIds: r.jobIds }
+function mapCompressJob(j: Record<string, unknown>): CompressJob {
+  return {
+    id: j.id as string,
+    batchId: j.batchId as string,
+    assetId: j.assetId as number,
+    status: j.status as CompressJob['status'],
+    progress: j.progress as number,
+    beforeBytes: (j.beforeBytes as number) ?? 0,
+    afterBytes: (j.afterBytes as number) ?? 0,
+    finalQuality: j.finalQuality as number | undefined,
+    format: (j.format as string) ?? '',
+    previewName: j.previewName as string | undefined,
+    outputPath: (j.outputPath as string) ?? '',
+    error: j.error as string | undefined,
+  }
 }
 
-export async function listCompressJobs(batchId: string): Promise<CompressJob[]> {
-  const r = await api.compressJobs({ batchId })
-  return r.jobs.map((j) => ({
-    id: j.id,
-    batchId: j.batchId,
-    assetId: j.assetId,
-    status: j.status as any,
-    progress: j.progress,
-    beforeBytes: j.beforeBytes,
-    afterBytes: j.afterBytes,
-    finalQuality: j.finalQuality,
-    format: j.format,
-    previewName: j.previewName,
-    outputPath: j.outputPath,
-    error: j.error,
-  }))
-}
+const worker = createModuleWorker<CompressJob, Parameters<typeof api.compressSubmit>[0]>({
+  apiSubmit: api.compressSubmit.bind(api),
+  apiList: api.compressJobs.bind(api),
+  apiCancel: api.compressCancel.bind(api),
+  apiRetry: api.compressRetry.bind(api),
+  mapJob: mapCompressJob,
+})
+
+export const submitCompress = worker.submit
+export const listCompressJobs = worker.listJobs
+export const cancelCompressJobs = worker.cancelJobs
+export const retryCompressJob = worker.retryJob

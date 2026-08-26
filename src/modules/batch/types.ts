@@ -3,7 +3,7 @@ import type { ImageAsset } from '@/types'
 export type BatchFit = 'contain' | 'cover' | 'fill' | 'inside' | 'outside'
 export type BatchFormat = 'jpg' | 'jpeg' | 'png' | 'webp' | 'avif' | 'gif' | 'original'
 
-export type BatchJobStatus = 'queued' | 'running' | 'done' | 'error'
+export type BatchJobStatus = 'queued' | 'running' | 'done' | 'error' | 'cancelled'
 
 export interface BatchResize {
   enabled: boolean

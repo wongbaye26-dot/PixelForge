@@ -1,49 +1,22 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { api } from '@/api/client'
-import { parseSizeList } from '@/core/size-parser'
-import type { ExportFormat, FitMode, ParsedSize } from '@/types'
-
-function sizeKey(s: ParsedSize) {
-  return `${s.width}x${s.height}`
-}
+import { api, type ExportTaskApiJob } from '@/api/client'
+import { useExportSizeStore } from '@/stores/export-size'
+import type { ExportFormat, FitMode } from '@/types'
 
 export const useExportStore = defineStore('export', () => {
-  const sizeInput = ref(
-    '1920x1080\n1080x1920\n800x800\n1242x1660',
-  )
-  const parsedSizes = ref<ParsedSize[]>([])
-  const enabledSizeKeys = ref<Set<string>>(new Set())
+  const exportSizes = useExportSizeStore()
   const formats = ref<ExportFormat[]>(['original'])
-  const fitMode = ref<FitMode>('contain')
+  const fitMode = ref<FitMode>('cover')
   const quality = ref(90)
   const targetSizeKb = ref<number | undefined>(300)
+  const mozjpeg = ref(true)
+  const usePngquant = ref(true)
   const namingPattern = ref('{name}_{size}.{format}')
   const outputDir = ref('')
   const defaultOutputDir = ref('')
   const exporting = ref(false)
   const lastResult = ref<{ total: number; completed: number; failed: number } | null>(null)
-
-  async function loadSettings() {
-    const [sizeRes, enabledRes] = await Promise.all([
-      api.getSetting('size_input'),
-      api.getSetting('enabled_size_keys'),
-    ])
-    if (sizeRes.value) {
-      sizeInput.value = sizeRes.value
-    }
-    if (enabledRes.value) {
-      enabledSizeKeys.value = new Set(enabledRes.value.split(','))
-    }
-    parseSizes()
-  }
-
-  async function persistSettings() {
-    await Promise.all([
-      api.setSetting('size_input', sizeInput.value),
-      api.setSetting('enabled_size_keys', [...enabledSizeKeys.value].join(',')),
-    ])
-  }
 
   async function loadExportDir() {
     const { path, defaultPath } = await api.getExportDir()
@@ -61,46 +34,29 @@ export const useExportStore = defineStore('export', () => {
   }
 
   function parseSizes() {
-    const parsed = parseSizeList(sizeInput.value)
-    const prev = enabledSizeKeys.value
-    const next = new Set<string>()
-    for (const s of parsed) {
-      const k = sizeKey(s)
-      if (prev.size === 0 || prev.has(k)) next.add(k)
-    }
-    if (next.size === 0 && parsed.length > 0) {
-      parsed.forEach((s) => next.add(sizeKey(s)))
-    }
-    parsedSizes.value = parsed
-    enabledSizeKeys.value = next
+    exportSizes.parseSizes()
   }
 
   function toggleSizeKey(key: string) {
-    const next = new Set(enabledSizeKeys.value)
-    if (next.has(key)) next.delete(key)
-    else next.add(key)
-    enabledSizeKeys.value = next
+    exportSizes.setSizeEnabled(key, !exportSizes.enabledSizeKeys.has(key))
   }
 
   function setSizeEnabled(key: string, enabled: boolean) {
-    const next = new Set(enabledSizeKeys.value)
-    if (enabled) next.add(key)
-    else next.delete(key)
-    enabledSizeKeys.value = next
+    exportSizes.setSizeEnabled(key, enabled)
   }
 
   function activeSizes() {
-    return parsedSizes.value.filter((s) => enabledSizeKeys.value.has(sizeKey(s)))
+    return exportSizes.activeSizes()
   }
 
-  async function runExport(assetIds: number[]) {
-    parseSizes()
-    const sizes = activeSizes()
+  async function submitExport(assetIds: number[]) {
+    exportSizes.parseSizes()
+    const sizes = exportSizes.activeSizes()
     if (sizes.length === 0 || assetIds.length === 0) return
 
     exporting.value = true
     try {
-      const result = await api.exportBatch({
+      return await api.exportBatchSubmit({
         assetIds,
         sizes: sizes.map((s) => ({ width: s.width, height: s.height })),
         formats: formats.value,
@@ -109,33 +65,45 @@ export const useExportStore = defineStore('export', () => {
         targetSizeKb: targetSizeKb.value,
         namingPattern: namingPattern.value,
         outputDir: outputDir.value || undefined,
+        mozjpeg: mozjpeg.value,
+        usePngquant: usePngquant.value,
       })
-      lastResult.value = {
-        total: result.total,
-        completed: result.completed,
-        failed: result.failed,
-      }
-      return result
     } finally {
       exporting.value = false
     }
   }
 
+  async function listExportJobs(batchId: string) {
+    const result = await api.exportBatchJobs({ batchId })
+    const jobs = result.jobs
+    lastResult.value = {
+      total: jobs.length,
+      completed: jobs.filter((job) => job.status === 'completed').length,
+      failed: jobs.filter((job) => job.status === 'failed').length,
+    }
+    return jobs
+  }
+
+  async function controlExportJob(id: string, action: 'pause' | 'resume' | 'cancel' | 'retry'): Promise<ExportTaskApiJob> {
+    const result = await api.exportBatchControl(id, action)
+    return result.job
+  }
+
   return {
-    sizeInput,
-    parsedSizes,
-    enabledSizeKeys,
+    sizeInput: exportSizes.sizeInput,
+    parsedSizes: exportSizes.parsedSizes,
+    enabledSizeKeys: exportSizes.enabledSizeKeys,
     formats,
     fitMode,
     quality,
     targetSizeKb,
+    mozjpeg,
+    usePngquant,
     namingPattern,
     outputDir,
     defaultOutputDir,
     exporting,
     lastResult,
-    loadSettings,
-    persistSettings,
     loadExportDir,
     saveExportDir,
     resetExportDir,
@@ -143,7 +111,9 @@ export const useExportStore = defineStore('export', () => {
     toggleSizeKey,
     setSizeEnabled,
     activeSizes,
-    runExport,
-    sizeKey,
+    submitExport,
+    listExportJobs,
+    controlExportJob,
+    sizeKey: exportSizes.sizeKey,
   }
 })

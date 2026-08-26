@@ -1,12 +1,33 @@
 <script setup lang="ts">
-import { NCheckbox, NColorPicker, NInputNumber, NSlider, NSwitch } from 'naive-ui'
+import { NButton, NCheckbox, NColorPicker, NInputNumber, NSlider, NSwitch } from 'naive-ui'
 import { useEditStore } from '../stores/edit'
+import { useFeedback } from '@/composables/use-feedback'
 
 const edit = useEditStore()
+const feedback = useFeedback()
+
+async function handleExport() {
+  try {
+    const result = await edit.exportImages()
+    if (!result) {
+      feedback.warning('请先选择要导出的图片')
+      return
+    }
+    const ok = result.results.filter((r) => r.success).length
+    const failed = result.results.length - ok
+    if (failed > 0) {
+      feedback.warning(`已导出 ${ok} 张，${failed} 张失败。输出目录：${result.outputDir}`)
+    } else {
+      feedback.success(`已导出 ${ok} 张到 ${result.outputDir}`)
+    }
+  } catch (err) {
+    feedback.error(err instanceof Error ? err.message : '导出失败')
+  }
+}
 </script>
 
 <template>
-  <div class="panel">
+  <div class="pf-panel-shell pf-panel-shell--rail">
     <div class="head">
       <div class="title">编辑参数</div>
     </div>
@@ -73,49 +94,27 @@ const edit = useEditStore()
     <div class="section">
       <div class="sec-title">预览尺寸</div>
       <div class="row">
-        <div class="label">Max</div>
+        <div class="label">最大值</div>
         <NSlider v-model:value="edit.params.maxSize" :min="256" :max="1400" :step="16" />
         <div class="val">{{ edit.params.maxSize }}</div>
       </div>
+    </div>
+
+    <div class="foot">
+      <NButton
+        type="primary"
+        block
+        :loading="edit.exporting"
+        :disabled="!edit.activeAsset"
+        @click="handleExport"
+      >
+        导出编辑结果
+      </NButton>
     </div>
   </div>
 </template>
 
 <style scoped>
-.panel {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  background: var(--pf-bg-elevated);
-  border: 1px solid var(--pf-border);
-  border-radius: 12px;
-  overflow: hidden;
-}
-.head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 12px 10px;
-  border-bottom: 1px solid var(--pf-border);
-  background: var(--pf-bg);
-}
-.title {
-  font-size: 13px;
-  font-weight: 900;
-  color: var(--pf-text);
-}
-.section {
-  padding: 12px;
-  border-bottom: 1px solid var(--pf-border);
-}
-.sec-title {
-  font-size: 11px;
-  font-weight: 800;
-  color: var(--pf-text-secondary);
-  margin-bottom: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
 .row {
   display: flex;
   align-items: center;
@@ -133,6 +132,12 @@ const edit = useEditStore()
   color: var(--pf-text);
   min-width: 34px;
   text-align: right;
+}
+.foot {
+  margin-top: auto;
+  padding: 12px;
+  border-top: 1px solid var(--pf-border);
+  background: var(--pf-bg);
 }
 </style>
 

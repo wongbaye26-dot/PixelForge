@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain } = require('electron')
+const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const http = require('http')
@@ -20,6 +20,10 @@ function getUnpackedRoot() {
 
 function getDataRoot() {
   return path.join(app.getPath('userData'), 'pixel-forge-data')
+}
+
+function getUserSettingsPath() {
+  return path.join(getDataRoot(), 'user-settings.json')
 }
 
 function ensureDataDirs(root) {
@@ -79,14 +83,36 @@ function probeWorkerHealth(timeoutMs = 600) {
   })
 }
 
+function resolveWorkerLaunch() {
+  if (app.isPackaged) {
+    return {
+      execPath: process.execPath.trim(),
+      extraEnv: { ELECTRON_RUN_AS_NODE: '1' },
+    }
+  }
+
+  const devNode = process.env.PIXELFORGE_DEV_NODE
+  if (devNode && fs.existsSync(devNode)) {
+    return { execPath: devNode, extraEnv: {} }
+  }
+
+  // 开发态使用系统 Node，与 `npm run dev:api` / npm rebuild 的原生模块 ABI 一致
+  return { execPath: 'node', extraEnv: {} }
+}
+
+function buildWorkerPath() {
+  const extra = [
+    '/opt/homebrew/bin',
+    '/usr/local/bin',
+    '/opt/local/bin',
+  ].filter((dir) => fs.existsSync(dir))
+  const base = process.env.PATH || ''
+  return [...extra, base].filter(Boolean).join(path.delimiter)
+}
+
 async function startWorker() {
   const root = getDataRoot()
   ensureDataDirs(root)
-
-  const script = workerScriptPath()
-  if (!fs.existsSync(script)) {
-    throw new Error(`Worker 未找到: ${script}\n请先执行 npm run build:worker`)
-  }
 
   const alreadyRunning = await probeWorkerHealth(500)
   if (alreadyRunning) {
@@ -94,17 +120,23 @@ async function startWorker() {
     return
   }
 
+  const script = workerScriptPath()
+  if (!fs.existsSync(script)) {
+    throw new Error(
+      `Worker 未找到: ${script}\n请先执行 npm run dev:api，或 npm run build:worker`,
+    )
+  }
+
   const unpackedRoot = getUnpackedRoot()
   const nodeModules = path.join(unpackedRoot, 'node_modules')
+  const { execPath, extraEnv } = resolveWorkerLaunch()
 
-  // Use a cleaner spawn path and handle potential ENOENT
-   const execPath = process.execPath.trim()
-   
-   workerProcess = spawn(execPath, [script], {
+  workerProcess = spawn(execPath, [script], {
     cwd: unpackedRoot,
     env: {
       ...process.env,
-      ELECTRON_RUN_AS_NODE: '1',
+      ...extraEnv,
+      PATH: buildWorkerPath(),
       PIXELFORGE_ROOT: root,
       PIXELFORGE_PORT: String(PORT),
       NODE_PATH: fs.existsSync(nodeModules) ? nodeModules : '',
@@ -142,7 +174,7 @@ function waitForWorker(maxAttempts = 80) {
         if (res.statusCode === 200) resolve()
         else retry()
       })
-      req.on('error', (e) => {
+      req.on('error', (_err) => {
         // console.log(`[pixel-forge] waiting for worker... ${attempts}/${maxAttempts}`)
         retry()
       })
@@ -187,8 +219,21 @@ function createWindow() {
     },
   })
 
+  const isDev = Boolean(process.env.VITE_DEV_SERVER_URL)
+
   mainWindow.once('ready-to-show', () => {
     mainWindow.show()
+    if (isDev) {
+      mainWindow.webContents.openDevTools({ mode: 'detach' })
+    }
+  })
+
+  mainWindow.webContents.on('before-input-event', (_event, input) => {
+    if (input.type !== 'keyDown') return
+    const key = input.key?.toLowerCase?.() ?? ''
+    if (input.meta && input.alt && key === 'i') {
+      mainWindow.webContents.toggleDevTools()
+    }
   })
 
   if (indexPath.startsWith('http')) {
@@ -222,6 +267,42 @@ ipcMain.handle('pick-folder', async () => {
   })
   if (result.canceled || !result.filePaths.length) return null
   return result.filePaths[0]
+})
+
+ipcMain.handle('open-path', async (_event, targetPath) => {
+  if (!targetPath || typeof targetPath !== 'string') return { ok: false }
+  const err = await shell.openPath(targetPath)
+  return { ok: !err, error: err || undefined }
+})
+
+ipcMain.handle('show-item-in-folder', async (_event, targetPath) => {
+  if (!targetPath || typeof targetPath !== 'string') return { ok: false }
+  shell.showItemInFolder(targetPath)
+  return { ok: true }
+})
+
+ipcMain.handle('read-user-settings', async () => {
+  try {
+    const file = getUserSettingsPath()
+    if (!fs.existsSync(file)) return null
+    return JSON.parse(fs.readFileSync(file, 'utf8'))
+  } catch (err) {
+    console.error('[pixel-forge] read-user-settings failed:', err)
+    return null
+  }
+})
+
+ipcMain.handle('write-user-settings', async (_event, payload) => {
+  try {
+    const root = getDataRoot()
+    ensureDataDirs(root)
+    const file = getUserSettingsPath()
+    fs.writeFileSync(file, JSON.stringify(payload ?? {}, null, 2), 'utf8')
+    return { ok: true }
+  } catch (err) {
+    console.error('[pixel-forge] write-user-settings failed:', err)
+    return { ok: false }
+  }
 })
 
 app.whenReady().then(async () => {

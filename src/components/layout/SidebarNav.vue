@@ -1,15 +1,43 @@
 <script setup lang="ts">
-import { NProgress } from 'naive-ui'
-import { computed, ref, watch } from 'vue'
+import { NProgress, useDialog } from 'naive-ui'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useLibraryStore } from '@/stores/library'
 import { useUiStore, type LibraryView } from '@/stores/ui'
+import logoUrl from '@/assets/logo.png'
+import { useSystemMetricsStore } from '@/stores/system-metrics'
+import { featureFlags } from '@/featureFlags'
+import { APP_VERSION } from '@/constants/app'
+import { useFeedback } from '@/composables/use-feedback'
+import { api } from '@/api/client'
+import type { LibraryFolder } from '@/types'
+
+const appVersion = APP_VERSION
 
 const library = useLibraryStore()
 const ui = useUiStore()
-const isElectron = typeof window !== 'undefined' && !!window.pixelForge?.isElectron
+const sys = useSystemMetricsStore()
+const dialog = useDialog()
+const feedback = useFeedback()
 
 const assetCount = computed(() => library.assets.length)
 const favoriteCount = computed(() => library.assets.filter((a) => a.favorite).length)
+const trashCount = ref(0)
+
+async function refreshTrashCount() {
+  if (!featureFlags.ENABLE_TRASH) return
+  try {
+    const r = await api.trashCount()
+    trashCount.value = r.count
+  } catch {
+    trashCount.value = 0
+  }
+}
+const storageText = computed(() => {
+  const usedGb = Math.round(sys.diskUsedBytes / 1024 / 1024 / 1024)
+  const totalGb = Math.round(sys.diskTotalBytes / 1024 / 1024 / 1024)
+  if (!totalGb) return '—'
+  return `${usedGb}GB / ${totalGb}GB`
+})
 
 const expanded = ref({
   folder: true,
@@ -28,6 +56,22 @@ watch(
   },
   { immediate: true },
 )
+
+onMounted(() => {
+  sys.start()
+  void refreshTrashCount()
+})
+
+watch(
+  () => library.assets.length,
+  () => {
+    void refreshTrashCount()
+  },
+)
+
+onUnmounted(() => {
+  sys.stop()
+})
 
 function toggleExpanded(view: keyof typeof expanded.value) {
   expanded.value[view] = !expanded.value[view]
@@ -116,19 +160,30 @@ const tagFacets = computed(() => {
 })
 
 function setView(view: LibraryView, params?: { folderId?: number }) {
+  if (view === 'ai' && !featureFlags.ENABLE_AI) return
+  if (view === 'ocr' && !featureFlags.ENABLE_OCR) return
+  if (view === 'trash' && !featureFlags.ENABLE_TRASH) return
+  if (view.startsWith('template_') && !featureFlags.ENABLE_TEMPLATE) return
+
   ui.libraryView = view
   library.resetFilters()
 
   if (view === 'favorites') {
     library.showFavoritesOnly = true
+  } else if (view === 'recent') {
+    library.showRecentOnly = true
   } else if (view === 'duplicate') {
     library.filterDuplicate = true
+  } else if (view === 'trash') {
+    library.showTrashOnly = true
   } else if (view === 'folder' && params?.folderId) {
     library.filterFolderId = params.folderId
   }
 
-  if (['all', 'favorites', 'recent', 'duplicate', 'folder', 'tag', 'format', 'ratio', 'size'].includes(view)) {
-    library.refresh()
+  if (view.startsWith('template_')) return
+
+  if (['all', 'favorites', 'recent', 'duplicate', 'folder', 'tag', 'format', 'ratio', 'size', 'trash'].includes(view)) {
+    void library.refresh().catch(() => {})
   }
 }
 
@@ -165,296 +220,383 @@ async function applySize(width: number, height: number) {
   await library.refresh()
 }
 
-async function pickFolder() {
-  const p = await window.pixelForge?.pickFolder()
-  if (p) {
-    library.scanPath = p
-    await library.scan()
-  }
+function confirmRemoveFolder(folder: LibraryFolder, event: MouseEvent) {
+  event.stopPropagation()
+  event.preventDefault()
+  const trashHint = featureFlags.ENABLE_TRASH
+    ? '该文件夹下的图片将移入回收站（不会删除磁盘文件）。'
+    : '该文件夹下的图片将从图库中移除（不会删除磁盘文件）。'
+  dialog.warning({
+    title: '移除文件夹',
+    content: `确定从图库移除「${folder.label}」？${trashHint}`,
+    positiveText: '移除',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      try {
+        const wasViewingFolder = ui.libraryView === 'folder' && library.filterFolderId === folder.id
+        const result = await library.removeFolder(folder.id)
+        if (wasViewingFolder) {
+          ui.libraryView = 'all'
+        }
+        const moved = result.assetsMoved
+        if (moved > 0) {
+          feedback.success(
+            featureFlags.ENABLE_TRASH
+              ? `已移除文件夹，${moved} 张图片已移入回收站`
+              : `已移除文件夹，${moved} 张图片已从图库移除`,
+          )
+        } else {
+          feedback.success('已从图库移除该文件夹')
+        }
+      } catch (err) {
+        feedback.error(err instanceof Error ? err.message : '移除失败')
+        return false
+      }
+    },
+  })
 }
 
-async function importFolder() {
-  if (isElectron) {
-    await pickFolder()
-    return
-  }
-  if (library.scanPath.trim()) await library.scan()
-}
 </script>
 
 <template>
   <aside class="sidebar">
     <div class="brand">
-      <div class="logo">
-        <svg viewBox="0 0 100 100" class="logo-svg">
-          <circle cx="50" cy="50" r="45" fill="none" stroke="currentColor" stroke-width="8" />
-          <path d="M50 20 C35 20 25 35 25 50 C25 65 35 80 50 80 C65 80 75 65 75 50" fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round" />
-          <circle cx="50" cy="50" r="10" fill="currentColor" />
-          <path d="M60 60 L80 80" stroke="currentColor" stroke-width="8" stroke-linecap="round" />
-          <path d="M55 25 L75 25 L75 45" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />
-          <path d="M65 35 L85 35 L85 55" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />
-        </svg>
+      <div class="logo-shell">
+        <div class="logo">
+          <img :src="logoUrl" alt="PixelForge" class="logo-img" />
+        </div>
       </div>
       <div class="brand-info">
         <span class="brand-name">PixelForge</span>
-        <span class="brand-sub">智能图片资产处理工具</span>
+        <span class="brand-sub">本地图片批量处理</span>
       </div>
     </div>
 
     <div class="sidebar-content">
-      <div class="pf-section-title">图库</div>
-      <nav class="nav">
-        <button
-          class="nav-item"
-          :class="{ active: ui.libraryView === 'all' }"
-          @click="setView('all')"
-        >
-          <span class="icon">🖼</span>
-          <span class="label">全部照片</span>
-          <span class="badge">{{ assetCount.toLocaleString() }}</span>
-        </button>
-        <button class="nav-item" :class="{ active: ui.libraryView === 'recent' }" @click="setView('recent')">
-          <span class="icon">🕐</span>
-          <span class="label">最近导入</span>
-        </button>
-        <button
-          class="nav-item"
-          :class="{ active: ui.libraryView === 'favorites' }"
-          @click="setView('favorites')"
-        >
-          <span class="icon">★</span>
-          <span class="label">收藏</span>
-          <span v-if="favoriteCount" class="badge">{{ favoriteCount }}</span>
-        </button>
-        <button
-          class="nav-item"
-          :class="{ active: ui.libraryView === 'trash' }"
-          @click="setView('trash')"
-        >
-          <span class="icon">🗑</span>
-          <span class="label">回收站</span>
-        </button>
-      </nav>
-
-      <div class="pf-section-title">智能分类</div>
-      <nav class="nav sub">
-        <div class="collapsible-group">
+      <section class="sidebar-group">
+        <div class="section-head">
+          <div>
+            <div class="pf-section-title">资源管理</div>
+            <p class="section-subtitle">图库、收藏与快速筛选</p>
+          </div>
+        </div>
+        <nav class="nav">
           <button
-            class="nav-item group-header"
-            :class="{ active: ui.libraryView === 'folder' }"
-            @click="setView('folder')"
+            class="nav-item"
+            :class="{ active: ui.libraryView === 'all' }"
+            @click="setView('all')"
           >
-            <span class="icon">📁</span>
-            <span class="label">文件夹</span>
-            <span class="chevron" :class="{ open: expanded.folder }" @click.stop="toggleExpanded('folder')">▾</span>
+            <span class="icon-shell"><span class="icon">🖼</span></span>
+            <span class="label">全部照片</span>
+            <span class="badge">{{ assetCount.toLocaleString() }}</span>
           </button>
-          <div v-if="expanded.folder && library.folders.length > 0" class="sub-list">
+          <button class="nav-item" :class="{ active: ui.libraryView === 'recent' }" @click="setView('recent')">
+            <span class="icon-shell"><span class="icon">🕐</span></span>
+            <span class="label">最近导入</span>
+          </button>
+          <button
+            class="nav-item"
+            :class="{ active: ui.libraryView === 'favorites' }"
+            @click="setView('favorites')"
+          >
+            <span class="icon-shell"><span class="icon">★</span></span>
+            <span class="label">收藏</span>
+            <span v-if="favoriteCount" class="badge">{{ favoriteCount }}</span>
+          </button>
+          <button
+            v-if="featureFlags.ENABLE_TRASH"
+            class="nav-item"
+            :class="{ active: ui.libraryView === 'trash' }"
+            @click="setView('trash')"
+          >
+            <span class="icon-shell"><span class="icon">🗑️</span></span>
+            <span class="label">回收站</span>
+            <span v-if="trashCount" class="badge">{{ trashCount }}</span>
+          </button>
+        </nav>
+        <nav class="nav sub">
+          <div class="collapsible-group">
             <button
-              v-for="f in library.folders"
-              :key="f.id"
-              class="sub-item"
-              :class="{ active: library.filterFolderId === f.id }"
-              @click="setView('folder', { folderId: f.id })"
+              class="nav-item group-header"
+              :class="{ active: ui.libraryView === 'folder' && library.filterFolderId }"
+              @click="toggleExpanded('folder')"
             >
-              <span class="sub-icon">📁</span>
-              <span class="sub-label">{{ f.label }}</span>
+              <span class="icon-shell"><span class="icon">📁</span></span>
+              <span class="label">文件夹</span>
+              <span class="chevron" :class="{ open: expanded.folder }">▾</span>
             </button>
+            <div v-if="expanded.folder && library.folders.length > 0" class="sub-list">
+              <div
+                v-for="f in library.folders"
+                :key="f.id"
+                class="sub-item-wrap"
+                :class="{ active: library.filterFolderId === f.id }"
+              >
+                <button
+                  type="button"
+                  class="sub-item"
+                  :class="{ active: library.filterFolderId === f.id }"
+                  @click="setView('folder', { folderId: f.id })"
+                >
+                  <span class="sub-icon">📁</span>
+                  <span class="sub-label" :title="f.path">{{ f.label }}</span>
+                </button>
+                <button
+                  type="button"
+                  class="sub-item-remove pf-icon-btn"
+                  title="从图库移除此文件夹"
+                  aria-label="从图库移除此文件夹"
+                  @click="confirmRemoveFolder(f, $event)"
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+            <div v-else-if="expanded.folder" class="sub-empty">暂无已扫描文件夹</div>
           </div>
-        </div>
-        <div class="collapsible-group">
-          <button class="nav-item group-header" :class="{ active: ui.libraryView === 'tag' }" @click="setView('tag')">
-            <span class="icon">🏷️</span>
-            <span class="label">标签</span>
-            <span class="chevron" :class="{ open: expanded.tag }" @click.stop="toggleExpanded('tag')">▾</span>
-          </button>
-          <div v-if="expanded.tag && tagFacets.length" class="sub-list">
-            <button v-for="t in tagFacets" :key="t.value" class="sub-item" @click="applyTag(t.value)">
-              <span class="sub-icon">#</span>
-              <span class="sub-label">{{ t.value }}</span>
-              <span class="sub-count">{{ t.count }}</span>
-            </button>
-          </div>
-        </div>
-
-        <div class="collapsible-group">
-          <button class="nav-item group-header" :class="{ active: ui.libraryView === 'format' }" @click="setView('format')">
-            <span class="icon">🔖</span>
-            <span class="label">格式</span>
-            <span class="chevron" :class="{ open: expanded.format }" @click.stop="toggleExpanded('format')">▾</span>
-          </button>
-          <div v-if="expanded.format && formatFacets.length" class="sub-list">
-            <button v-for="f in formatFacets" :key="f.value" class="sub-item" @click="applyFormat(f.value)">
-              <span class="sub-icon">•</span>
-              <span class="sub-label">{{ f.value.toUpperCase() }}</span>
-              <span class="sub-count">{{ f.count }}</span>
-            </button>
-          </div>
-        </div>
-
-        <div class="collapsible-group">
-          <button class="nav-item group-header" :class="{ active: ui.libraryView === 'ratio' }" @click="setView('ratio')">
-            <span class="icon">📐</span>
-            <span class="label">比例</span>
-            <span class="chevron" :class="{ open: expanded.ratio }" @click.stop="toggleExpanded('ratio')">▾</span>
-          </button>
-          <div v-if="expanded.ratio && ratioFacets.length" class="sub-list">
-            <button v-for="r in ratioFacets" :key="r.label" class="sub-item" @click="applyRatio(r.value)">
-              <span class="sub-icon">▦</span>
-              <span class="sub-label" :title="r.label">{{ r.label }}</span>
-              <span class="sub-count">{{ r.count }}</span>
-            </button>
-          </div>
-        </div>
-
-        <div class="collapsible-group">
-          <button class="nav-item group-header" :class="{ active: ui.libraryView === 'size' }" @click="setView('size')">
-            <span class="icon">📏</span>
-            <span class="label">尺寸</span>
-            <span class="chevron" :class="{ open: expanded.size }" @click.stop="toggleExpanded('size')">▾</span>
-          </button>
-          <div v-if="expanded.size && sizeFacets.length" class="sub-list">
+          <div class="collapsible-group">
             <button
-              v-for="s in sizeFacets"
-              :key="`${s.width}x${s.height}`"
-              class="sub-item"
-              @click="applySize(s.width, s.height)"
+              class="nav-item group-header"
+              :class="{ active: ui.libraryView === 'tag' }"
+              @click="toggleExpanded('tag')"
             >
-              <span class="sub-icon">▣</span>
-              <span class="sub-label" :title="`${s.width}×${s.height}`">{{ s.width }}×{{ s.height }}</span>
-              <span class="sub-count">{{ s.count }}</span>
+              <span class="icon-shell"><span class="icon">🏷️</span></span>
+              <span class="label">关键词</span>
+              <span class="chevron" :class="{ open: expanded.tag }">▾</span>
             </button>
+            <div v-if="expanded.tag && tagFacets.length" class="sub-list">
+              <button v-for="t in tagFacets" :key="t.value" class="sub-item" @click="applyTag(t.value)">
+                <span class="sub-icon">#</span>
+                <span class="sub-label">{{ t.value }}</span>
+                <span class="sub-count">{{ t.count }}</span>
+              </button>
+            </div>
+            <div v-else-if="expanded.tag" class="sub-empty">暂无可用关键词</div>
+          </div>
+          <div class="collapsible-group">
+            <button
+              class="nav-item group-header"
+              :class="{ active: ui.libraryView === 'format' }"
+              @click="toggleExpanded('format')"
+            >
+              <span class="icon-shell"><span class="icon">🔖</span></span>
+              <span class="label">格式</span>
+              <span class="chevron" :class="{ open: expanded.format }">▾</span>
+            </button>
+            <div v-if="expanded.format && formatFacets.length" class="sub-list">
+              <button v-for="f in formatFacets" :key="f.value" class="sub-item" @click="applyFormat(f.value)">
+                <span class="sub-icon">•</span>
+                <span class="sub-label">{{ f.value.toUpperCase() }}</span>
+                <span class="sub-count">{{ f.count }}</span>
+              </button>
+            </div>
+            <div v-else-if="expanded.format" class="sub-empty">暂无格式数据</div>
+          </div>
+          <div class="collapsible-group">
+            <button
+              class="nav-item group-header"
+              :class="{ active: ui.libraryView === 'ratio' }"
+              @click="toggleExpanded('ratio')"
+            >
+              <span class="icon-shell"><span class="icon">📐</span></span>
+              <span class="label">比例</span>
+              <span class="chevron" :class="{ open: expanded.ratio }">▾</span>
+            </button>
+            <div v-if="expanded.ratio && ratioFacets.length" class="sub-list">
+              <button v-for="r in ratioFacets" :key="r.label" class="sub-item" @click="applyRatio(r.value)">
+                <span class="sub-icon">▦</span>
+                <span class="sub-label" :title="r.label">{{ r.label }}</span>
+                <span class="sub-count">{{ r.count }}</span>
+              </button>
+            </div>
+            <div v-else-if="expanded.ratio" class="sub-empty">暂无比例数据</div>
+          </div>
+          <div class="collapsible-group">
+            <button
+              class="nav-item group-header"
+              :class="{ active: ui.libraryView === 'size' }"
+              @click="toggleExpanded('size')"
+            >
+              <span class="icon-shell"><span class="icon">📏</span></span>
+              <span class="label">尺寸</span>
+              <span class="chevron" :class="{ open: expanded.size }">▾</span>
+            </button>
+            <div v-if="expanded.size && sizeFacets.length" class="sub-list">
+              <button
+                v-for="s in sizeFacets"
+                :key="`${s.width}x${s.height}`"
+                class="sub-item"
+                @click="applySize(s.width, s.height)"
+              >
+                <span class="sub-icon">▣</span>
+                <span class="sub-label" :title="`${s.width}×${s.height}`">{{ s.width }}×{{ s.height }}</span>
+                <span class="sub-count">{{ s.count }}</span>
+              </button>
+            </div>
+            <div v-else-if="expanded.size" class="sub-empty">暂无尺寸数据</div>
+          </div>
+        </nav>
+      </section>
+
+      <section class="sidebar-group">
+        <div class="section-head">
+          <div>
+            <div class="pf-section-title">图片处理</div>
+            <p class="section-subtitle">面向批量处理与编辑工作流</p>
           </div>
         </div>
+        <nav class="nav">
+          <button
+            class="nav-item"
+            :class="{ active: ui.libraryView === 'batch' }"
+            @click="setView('batch')"
+          >
+            <span class="icon-shell"><span class="icon">⚡️</span></span>
+            <span class="label">批量处理</span>
+          </button>
+          <button
+            class="nav-item"
+            :class="{ active: ui.libraryView === 'compress' }"
+            @click="setView('compress')"
+          >
+            <span class="icon-shell"><span class="icon">📦</span></span>
+            <span class="label">图片压缩</span>
+          </button>
+          <button
+            class="nav-item"
+            :class="{ active: ui.libraryView === 'convert' }"
+            @click="setView('convert')"
+          >
+            <span class="icon-shell"><span class="icon">🔄</span></span>
+            <span class="label">格式转换</span>
+          </button>
+          <button
+            class="nav-item"
+            :class="{ active: ui.libraryView === 'edit' }"
+            @click="setView('edit')"
+          >
+            <span class="icon-shell"><span class="icon">🎨</span></span>
+            <span class="label">图片编辑</span>
+          </button>
+        </nav>
+      </section>
 
-        <button
-          class="nav-item"
-          :class="{ active: ui.libraryView === 'duplicate' }"
-          @click="setView('duplicate')"
-        >
-          <span class="icon">🧬</span>
-          <span class="label">重复图片</span>
-        </button>
-      </nav>
+      <section class="sidebar-group">
+        <div class="section-head">
+          <div>
+            <div class="pf-section-title">导出工具</div>
+            <p class="section-subtitle">导出前的素材整理与检测</p>
+          </div>
+        </div>
+        <nav class="nav">
+          <button
+            class="nav-item"
+            :class="{ active: ui.libraryView === 'duplicate' }"
+            @click="setView('duplicate')"
+          >
+            <span class="icon-shell"><span class="icon">🧬</span></span>
+            <span class="label">重复图片</span>
+          </button>
+        </nav>
+        <nav v-if="featureFlags.ENABLE_TEMPLATE" class="nav sub">
+          <button
+            class="nav-item"
+            :class="{ active: ui.libraryView === 'template_my' }"
+            @click="setView('template_my')"
+          >
+            <span class="icon-shell"><span class="icon">🧩</span></span>
+            <span class="label">我的模板</span>
+          </button>
+          <button
+            class="nav-item"
+            :class="{ active: ui.libraryView === 'template_common' }"
+            @click="setView('template_common')"
+          >
+            <span class="icon-shell"><span class="icon">⭐️</span></span>
+            <span class="label">常用</span>
+          </button>
+          <button
+            class="nav-item"
+            :class="{ active: ui.libraryView === 'template_social' }"
+            @click="setView('template_social')"
+          >
+            <span class="icon-shell"><span class="icon">💬</span></span>
+            <span class="label">社交媒体</span>
+          </button>
+          <button
+            class="nav-item"
+            :class="{ active: ui.libraryView === 'template_ecommerce' }"
+            @click="setView('template_ecommerce')"
+          >
+            <span class="icon-shell"><span class="icon">🛒</span></span>
+            <span class="label">电商</span>
+          </button>
+          <button
+            class="nav-item"
+            :class="{ active: ui.libraryView === 'template_custom' }"
+            @click="setView('template_custom')"
+          >
+            <span class="icon-shell"><span class="icon">✨</span></span>
+            <span class="label">自定义</span>
+          </button>
+        </nav>
+      </section>
 
-      <div class="pf-section-title">模板中心</div>
-      <nav class="nav sub">
-        <button
-          class="nav-item"
-          :class="{ active: ui.libraryView === 'template_my' }"
-          @click="setView('template_my')"
-        >
-          <span class="icon">🧩</span>
-          <span class="label">我的模板</span>
-        </button>
-        <button
-          class="nav-item"
-          :class="{ active: ui.libraryView === 'template_common' }"
-          @click="setView('template_common')"
-        >
-          <span class="icon">⭐️</span>
-          <span class="label">常用</span>
-        </button>
-        <button
-          class="nav-item"
-          :class="{ active: ui.libraryView === 'template_social' }"
-          @click="setView('template_social')"
-        >
-          <span class="icon">💬</span>
-          <span class="label">社交媒体</span>
-        </button>
-        <button
-          class="nav-item"
-          :class="{ active: ui.libraryView === 'template_ecommerce' }"
-          @click="setView('template_ecommerce')"
-        >
-          <span class="icon">🛒</span>
-          <span class="label">电商</span>
-        </button>
-        <button
-          class="nav-item"
-          :class="{ active: ui.libraryView === 'template_custom' }"
-          @click="setView('template_custom')"
-        >
-          <span class="icon">✨</span>
-          <span class="label">自定义</span>
-        </button>
-      </nav>
-
-      <div class="pf-section-title">工具箱</div>
-      <nav class="nav sub">
-        <button
-          class="nav-item"
-          :class="{ active: ui.libraryView === 'batch' }"
-          @click="setView('batch')"
-        >
-          <span class="icon">⚡️</span>
-          <span class="label">批量处理</span>
-        </button>
-        <button
-          class="nav-item"
-          :class="{ active: ui.libraryView === 'compress' }"
-          @click="setView('compress')"
-        >
-          <span class="icon">📦</span>
-          <span class="label">图片压缩</span>
-        </button>
-        <button
-          class="nav-item"
-          :class="{ active: ui.libraryView === 'convert' }"
-          @click="setView('convert')"
-        >
-          <span class="icon">🔄</span>
-          <span class="label">格式转换</span>
-        </button>
-        <button
-          class="nav-item"
-          :class="{ active: ui.libraryView === 'edit' }"
-          @click="setView('edit')"
-        >
-          <span class="icon">🎨</span>
-          <span class="label">图片编辑</span>
-        </button>
-        <button
-          class="nav-item"
-          :class="{ active: ui.libraryView === 'ai' }"
-          @click="setView('ai')"
-        >
-          <span class="icon">🤖</span>
-          <span class="label">AI 扩图</span>
-        </button>
-        <button
-          class="nav-item"
-          :class="{ active: ui.libraryView === 'ocr' }"
-          @click="setView('ocr')"
-        >
-          <span class="icon">🔍</span>
-          <span class="label">OCR 识别</span>
-        </button>
-      </nav>
+      <section
+        v-if="featureFlags.ENABLE_AI || featureFlags.ENABLE_OCR"
+        class="sidebar-group"
+      >
+        <div class="section-head">
+          <div>
+            <div class="pf-section-title">高级功能</div>
+            <p class="section-subtitle">AI 扩图与文字识别</p>
+          </div>
+        </div>
+        <nav class="nav">
+          <button
+            v-if="featureFlags.ENABLE_AI"
+            class="nav-item"
+            :class="{ active: ui.libraryView === 'ai' }"
+            @click="setView('ai')"
+          >
+            <span class="icon-shell"><span class="icon">🤖</span></span>
+            <span class="label">AI 扩图</span>
+          </button>
+          <button
+            v-if="featureFlags.ENABLE_OCR"
+            class="nav-item"
+            :class="{ active: ui.libraryView === 'ocr' }"
+            @click="setView('ocr')"
+          >
+            <span class="icon-shell"><span class="icon">🔍</span></span>
+            <span class="label">OCR 识别</span>
+          </button>
+        </nav>
+      </section>
     </div>
 
     <div class="sidebar-footer">
-      <div class="storage">
+      <div class="storage-card">
         <div class="storage-label">
           <span>存储空间</span>
-          <span class="storage-val">256GB / 512GB</span>
+          <span class="storage-val">{{ storageText }}</span>
         </div>
         <NProgress
           type="line"
-          :percentage="50"
+          :percentage="Math.round(sys.diskPercent)"
           :show-indicator="false"
-          :height="4"
-          color="#007AFF"
+          :height="6"
+          color="var(--pf-primary)"
           :rail-color="ui.isDark ? '#333' : '#e5e5ea'"
         />
       </div>
-      <div class="footer-actions">
-        <div class="ver-info">v1.2.0</div>
-        <button class="pf-icon-btn theme-toggle" @click="ui.toggleTheme()">
+      <div class="sidebar-meta">
+        <div class="sidebar-meta-info">
+          <span class="meta-chip">v{{ appVersion }}</span>
+          <span class="meta-chip muted">{{ assetCount.toLocaleString() }} 张</span>
+        </div>
+        <button class="pf-icon-btn theme-toggle" title="切换主题" @click="ui.toggleTheme()">
           <span class="btn-icon">{{ ui.isDark ? '🌙' : '☀️' }}</span>
-        </button>
-        <button class="pf-icon-btn settings-btn">
-          <span class="btn-icon">⚙</span>
         </button>
       </div>
     </div>
@@ -463,137 +605,197 @@ async function importFolder() {
 
 <style scoped>
 .sidebar {
+  --sidebar-pad-x: var(--pf-gap-sm);
+  --sidebar-stack-gap: var(--pf-gap-sm);
   display: flex;
   flex-direction: column;
-  background: var(--pf-bg-elevated);
-  border-right: 1px solid var(--pf-border);
   height: 100%;
   overflow: hidden;
+  background: transparent;
 }
 .sidebar-content {
   flex: 1;
   overflow-y: auto;
   min-height: 0;
-  padding-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sidebar-stack-gap);
+  padding: var(--sidebar-stack-gap) var(--sidebar-pad-x) 0;
 }
 .brand {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 24px 20px 20px;
+  gap: var(--pf-gap-sm);
+  padding: var(--pf-gap-sm) var(--sidebar-pad-x);
   color: var(--pf-text);
-  border-bottom: 1px solid var(--pf-border);
-  margin-bottom: 8px;
+  border-bottom: var(--pf-border-width) solid color-mix(in srgb, var(--pf-border-color) 86%, transparent);
+  flex-shrink: 0;
 }
-.logo {
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, #007aff, #5856d6);
+.logo-shell {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
-  box-shadow: 0 4px 12px rgba(0, 122, 255, 0.4);
+  width: 44px;
+  height: 44px;
+  border-radius: var(--pf-radius-md);
+  padding: var(--pf-gap-2xs);
+  background: color-mix(in srgb, var(--pf-primary-soft) 36%, var(--pf-bg));
+  border: var(--pf-border-width) solid color-mix(in srgb, var(--pf-border-color) 86%, transparent);
+  box-shadow: none;
   flex-shrink: 0;
 }
-.logo-svg {
-  width: 28px;
-  height: 28px;
+.logo {
+  width: 38px;
+  height: 38px;
+  border-radius: var(--pf-radius-sm);
+  background: var(--pf-bg);
+  border: var(--pf-border-width) solid color-mix(in srgb, var(--pf-border-color) 86%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: none;
+  overflow: hidden;
+}
+.logo-img {
+  width: 100%;
+  height: 100%;
   display: block;
+  object-fit: cover;
 }
 .brand-info {
   display: flex;
   flex-direction: column;
   justify-content: center;
   overflow: hidden;
+  gap: 2px;
+  min-width: 0;
 }
 .brand-name {
-  font-weight: 850;
-  font-size: 20px;
-  line-height: 1.1;
+  font-weight: 800;
+  font-size: clamp(15px, 1.6vw, 18px);
+  line-height: 1.15;
   letter-spacing: -0.02em;
   color: var(--pf-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .brand-sub {
   font-size: 10px;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--pf-text-secondary);
   white-space: nowrap;
-  opacity: 0.8;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.pf-section-title {
-  padding: 16px 16px 8px;
-  font-size: 11px;
-  font-weight: 700;
+.sidebar-group,
+.storage-card {
+  padding: var(--pf-gap-sm);
+  border: var(--pf-border-width) solid color-mix(in srgb, var(--pf-border-color) 86%, transparent);
+  border-radius: var(--pf-radius-md);
+  background: var(--pf-bg-soft);
+  box-shadow: none;
+}
+.sidebar-group {
+  margin: 0;
+}
+.section-head {
+  padding: 0 0 var(--pf-gap-xs);
+}
+.section-subtitle {
+  margin: 2px 0 0;
   color: var(--pf-text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
+  font-size: 10px;
+  line-height: 1.35;
 }
 .nav {
-  padding: 4px 10px;
+  padding: 0;
 }
 .nav.sub {
-  padding-top: 0;
+  margin-top: var(--pf-gap-xs);
 }
 .nav-item {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--pf-gap-sm);
   width: 100%;
-  padding: 8px 12px;
-  margin-bottom: 2px;
+  min-height: 40px;
+  padding: 0 var(--pf-gap-sm);
+  margin-bottom: var(--pf-gap-2xs);
   border: none;
-  border-radius: 8px;
+  border-radius: var(--pf-radius-md);
   background: transparent;
   color: var(--pf-text-secondary);
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
   text-align: left;
-  transition: all 0.2s;
+  position: relative;
+  transition:
+    color var(--pf-transition-fast) var(--pf-ease-standard),
+    background-color var(--pf-transition-fast) var(--pf-ease-standard),
+    border-color var(--pf-transition-fast) var(--pf-ease-standard),
+    transform var(--pf-transition-fast) var(--pf-ease-standard),
+    opacity var(--pf-transition-fast) var(--pf-ease-standard),
+    box-shadow var(--pf-transition-fast) var(--pf-ease-standard);
 }
 .group-header {
   position: relative;
 }
+.nav-item::before {
+  content: '';
+  position: absolute;
+  left: var(--pf-gap-xs);
+  top: 50%;
+  width: 3px;
+  height: 18px;
+  border-radius: var(--pf-radius-pill);
+  background: transparent;
+  transform: translateY(-50%);
+  transition:
+    background-color var(--pf-transition-fast) var(--pf-ease-standard),
+    opacity var(--pf-transition-fast) var(--pf-ease-standard);
+}
+.nav-item:hover {
+  background: color-mix(in srgb, var(--pf-primary-soft) 35%, var(--pf-bg-hover));
+  color: var(--pf-text);
+  transform: translateX(2px);
+}
 .chevron {
   margin-left: auto;
   font-size: 11px;
-  opacity: 0.7;
+  color: var(--pf-text-secondary);
   transform: rotate(-90deg);
-  transition: transform 0.2s, opacity 0.2s;
-  padding: 4px 6px;
-  border-radius: 6px;
+  transition:
+    transform var(--pf-transition-fast) var(--pf-ease-standard),
+    opacity var(--pf-transition-fast) var(--pf-ease-standard),
+    background-color var(--pf-transition-fast) var(--pf-ease-standard);
+  padding: var(--pf-gap-xs) var(--pf-gap-sm);
+  border-radius: var(--pf-radius-sm);
 }
 .chevron:hover {
   background: var(--pf-bg-hover);
-  opacity: 1;
 }
 .chevron.open {
   transform: rotate(0deg);
 }
+.icon-shell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--pf-radius-sm);
+  background: color-mix(in srgb, var(--pf-bg-hover) 84%, transparent);
+  border: var(--pf-border-width) solid color-mix(in srgb, var(--pf-border) 78%, transparent);
+  flex: 0 0 auto;
+  transition:
+    background-color var(--pf-transition-fast) var(--pf-ease-standard),
+    border-color var(--pf-transition-fast) var(--pf-ease-standard),
+    transform var(--pf-transition-fast) var(--pf-ease-standard);
+}
 .icon {
   font-size: 16px;
-  width: 20px;
-  display: flex;
-  justify-content: center;
-  opacity: 0.8;
-}
-.nav-item.active {
-  background: var(--pf-primary);
-  color: #ffffff;
-  box-shadow: 0 4px 12px rgba(0, 122, 255, 0.3);
-}
-.nav-item.active .icon {
-  filter: brightness(0) invert(1);
-}
-.nav-item.active .badge {
-  background: rgba(255, 255, 255, 0.2);
-  color: #ffffff;
-}
-.icon {
-  font-size: 18px;
-  width: 24px;
   display: flex;
   justify-content: center;
 }
@@ -603,27 +805,94 @@ async function importFolder() {
   background: var(--pf-bg-hover);
   color: var(--pf-text-secondary);
   padding: 2px 8px;
-  border-radius: 12px;
+  border-radius: var(--pf-radius-pill);
   min-width: 24px;
   text-align: center;
+  font-weight: 700;
+}
+.nav-item.active {
+  background: color-mix(in srgb, var(--pf-primary-soft) 48%, var(--pf-bg));
+  color: var(--pf-text);
+  box-shadow: none;
+}
+.nav-item.active::before {
+  background: var(--pf-primary);
+}
+.nav-item.active .icon-shell {
+  background: color-mix(in srgb, var(--pf-primary-soft) 56%, var(--pf-bg));
+  border-color: color-mix(in srgb, var(--pf-primary) 24%, var(--pf-border-color));
+  transform: none;
+}
+.nav-item.active .badge {
+  background: color-mix(in srgb, var(--pf-primary) 18%, transparent);
+  color: var(--pf-primary);
 }
 .sub-list {
-  padding: 2px 0 8px 48px;
+  padding: var(--pf-gap-xs) 0 var(--pf-gap-sm) 38px;
+}
+.sub-item-wrap {
+  display: flex;
+  align-items: center;
+  gap: var(--pf-gap-2xs);
+  margin-bottom: var(--pf-gap-2xs);
+  border-radius: var(--pf-radius-sm);
+  padding-right: var(--pf-gap-2xs);
+}
+.sub-item-wrap:hover,
+.sub-item-wrap.active {
+  background: color-mix(in srgb, var(--pf-bg-hover) 70%, transparent);
+}
+.sub-item-wrap.active {
+  background: var(--pf-primary-soft);
+}
+.sub-item-wrap .sub-item {
+  flex: 1;
+  min-width: 0;
+  margin-bottom: 0;
+}
+.sub-item-wrap .sub-item:hover,
+.sub-item-wrap .sub-item.active {
+  background: transparent;
+  transform: none;
+}
+.sub-item-remove {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  opacity: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--pf-text-secondary);
+}
+.sub-item-wrap:hover .sub-item-remove,
+.sub-item-wrap:focus-within .sub-item-remove {
+  opacity: 1;
+}
+.sub-item-remove:hover {
+  color: var(--pf-danger);
+  background: color-mix(in srgb, var(--pf-danger) 12%, transparent);
 }
 .sub-item {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--pf-gap-sm);
   width: 100%;
-  padding: 6px 12px;
+  min-height: 34px;
+  padding: 0 var(--pf-gap-sm);
   border: none;
-  border-radius: 8px;
+  border-radius: var(--pf-radius-sm);
   background: transparent;
   color: var(--pf-text-secondary);
-  font-size: 13px;
+  font-size: 12px;
+  font-weight: 600;
   cursor: pointer;
   text-align: left;
-  transition: all 0.2s;
+  transition:
+    color var(--pf-transition-fast) var(--pf-ease-standard),
+    background-color var(--pf-transition-fast) var(--pf-ease-standard),
+    border-color var(--pf-transition-fast) var(--pf-ease-standard),
+    transform var(--pf-transition-fast) var(--pf-ease-standard),
+    opacity var(--pf-transition-fast) var(--pf-ease-standard);
 }
 .sub-label {
   min-width: 0;
@@ -635,64 +904,88 @@ async function importFolder() {
   margin-left: auto;
   font-size: 11px;
   color: var(--pf-text-secondary);
-  opacity: 0.9;
+  opacity: 0.8;
+  font-weight: 700;
+}
+.sub-empty {
+  padding: 6px 12px 10px 40px;
+  font-size: 11px;
+  color: var(--pf-text-secondary);
+  opacity: 0.85;
 }
 .sub-item:hover {
   background: var(--pf-bg-hover);
   color: var(--pf-text);
+  transform: translateX(2px);
 }
 .sub-item.active {
   color: var(--pf-primary);
-  font-weight: 600;
+  background: var(--pf-primary-soft);
 }
 
 .sidebar-footer {
-  padding: 16px 14px;
-  border-top: 1px solid var(--pf-border);
-  background: var(--pf-bg-elevated);
-}
-.storage {
-  margin-bottom: 12px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sidebar-stack-gap);
+  padding: var(--sidebar-stack-gap) var(--sidebar-pad-x);
+  border-top: var(--pf-border-width) solid color-mix(in srgb, var(--pf-border-color) 86%, transparent);
+  background: transparent;
 }
 .storage-label {
   display: flex;
   justify-content: space-between;
-  font-size: 10px;
-  color: var(--pf-text-secondary);
-  margin-bottom: 6px;
-  font-weight: 600;
-}
-.footer-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.ver-info {
   font-size: 11px;
+  color: var(--pf-text-secondary);
+  margin-bottom: var(--pf-gap-sm);
   font-weight: 700;
-  color: var(--pf-text-secondary);
-  background: var(--pf-bg-hover);
-  padding: 2px 6px;
-  border-radius: 4px;
-  margin-right: auto;
 }
-.pf-icon-btn {
-  background: transparent;
-  border: none;
-  color: var(--pf-text-secondary);
-  font-size: 16px;
-  cursor: pointer;
+.sidebar-meta {
   display: flex;
   align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  transition: all 0.2s;
+  justify-content: space-between;
+  gap: var(--pf-gap-sm);
+  min-height: 28px;
 }
-.pf-icon-btn:hover {
+.sidebar-meta-info {
+  display: flex;
+  align-items: center;
+  gap: var(--pf-gap-xs);
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.meta-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 var(--pf-gap-sm);
+  border-radius: var(--pf-radius-pill);
+  background: var(--pf-primary-soft);
+  color: var(--pf-primary);
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.meta-chip.muted {
   background: var(--pf-bg-hover);
-  color: var(--pf-text);
-  transform: translateY(-1px);
+  color: var(--pf-text-secondary);
+}
+.theme-toggle {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+@media (max-width: 1024px) {
+  .nav-item {
+    min-height: 36px;
+    font-size: 12px;
+  }
+  .icon-shell {
+    width: 24px;
+    height: 24px;
+  }
+  .icon {
+    font-size: 14px;
+  }
 }
 </style>

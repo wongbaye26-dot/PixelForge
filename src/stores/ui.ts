@@ -26,8 +26,10 @@ export type LibraryView =
 
 export const useUiStore = defineStore('ui', () => {
   const libraryView = ref<LibraryView>('all')
-  const showExportTasks = ref(true)
+  const showExportTasks = ref(false)
   const thumbScale = ref(1)
+  const gallerySort = ref<'imported_desc' | 'filename_asc' | 'size_desc' | 'resolution_desc'>('imported_desc')
+  const galleryLayout = ref<'comfortable' | 'compact' | 'detail'>('comfortable')
   const rightTab = ref<'export' | 'edit' | 'metadata'>('export')
   const outputExpanded = ref(true)
   const compressExpanded = ref(false)
@@ -41,6 +43,8 @@ export const useUiStore = defineStore('ui', () => {
     libraryView,
     showExportTasks,
     thumbScale,
+    gallerySort,
+    galleryLayout,
     rightTab,
     outputExpanded,
     compressExpanded,

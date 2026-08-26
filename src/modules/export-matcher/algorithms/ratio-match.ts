@@ -1,13 +1,3 @@
-import type { FitMode } from '@/types'
-
-export interface MatchResult {
-  imageId: number
-  similarity: number
-  targetRatio: number
-  imageRatio: number
-  recommendedMode: FitMode
-}
-
 export function ratioSimilarity(targetRatio: number, imageRatio: number): number {
   return Math.abs(targetRatio - imageRatio)
 }

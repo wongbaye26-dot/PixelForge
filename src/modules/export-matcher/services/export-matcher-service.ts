@@ -1,11 +1,20 @@
-import type { FitMode } from '@/types'
-import type { ExportMatcherJob, ExportMatcherSubmitPayload } from '../types'
-import { listAutoMatchJobs, previewAutoMatch, submitAutoMatch } from '../workers/export-matcher-worker'
+import {
+  cancelAutoMatch,
+  listAutoMatchJobs,
+  previewAutoMatch,
+  retryAutoMatch,
+  submitAutoMatch,
+  swapAutoMatchJob,
+} from '../workers/export-matcher-worker'
+import type { ExportMatcherSubmitPayload } from '../types'
 
 export const exportMatcherService = {
-  submit: (payload: ExportMatcherSubmitPayload) => submitAutoMatch(payload),
-  listJobs: (batchId: string): Promise<ExportMatcherJob[]> => listAutoMatchJobs(batchId),
-  preview: (payload: { assetId: number; targetWidth: number; targetHeight: number; mode: FitMode }) =>
-    previewAutoMatch(payload),
+  submit: submitAutoMatch,
+  listJobs: listAutoMatchJobs,
+  preview: previewAutoMatch,
+  cancel: cancelAutoMatch,
+  retry: retryAutoMatch,
+  swap: swapAutoMatchJob,
 }
 
+export type { ExportMatcherSubmitPayload }

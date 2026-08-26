@@ -1,0 +1,229 @@
+/**
+ * Overlay scrollbars: hidden when content fits (overflow: auto) and
+ * only visible on hover / focus while scrolling is possible.
+ */
+
+:root {
+  --pf-scrollbar-size: 6px;
+  --pf-scrollbar-thumb: color-mix(in srgb, var(--pf-text-secondary) 42%, transparent);
+  --pf-scrollbar-thumb-hover: color-mix(in srgb, var(--pf-text-secondary) 58%, transparent);
+}
+
+.pf-scroll,
+.pf-panel-shell .list,
+.pf-panel-shell .body,
+.pf-panel-shell--rail .rail-body,
+.pf-panel-shell--queue .wrap,
+.sidebar-content,
+.panel-body,
+.grid-area,
+.selection-dock-strip,
+.task-list,
+.preset-scroll,
+.browser .list,
+.browser .grid-body,
+.wrap.pf-panel-shell > .grid,
+.panel .list,
+.text-box,
+.swap-list,
+.n-input__textarea-el,
+.n-base-select-menu .n-scrollbar-container,
+.n-dropdown-menu,
+.n-modal .n-card__content,
+.n-drawer-body-content-wrapper {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+@media (hover: hover) {
+  .pf-scroll:hover,
+  .pf-scroll:focus-within,
+  .pf-panel-shell .list:hover,
+  .pf-panel-shell .list:focus-within,
+  .pf-panel-shell .body:hover,
+  .pf-panel-shell .body:focus-within,
+  .pf-panel-shell--rail .rail-body:hover,
+  .pf-panel-shell--rail .rail-body:focus-within,
+  .pf-panel-shell--queue .wrap:hover,
+  .pf-panel-shell--queue .wrap:focus-within,
+  .sidebar-content:hover,
+  .sidebar-content:focus-within,
+  .panel-body:hover,
+  .panel-body:focus-within,
+  .grid-area:hover,
+  .grid-area:focus-within,
+  .selection-dock-strip:hover,
+  .selection-dock-strip:focus-within,
+  .task-list:hover,
+  .task-list:focus-within,
+  .preset-scroll:hover,
+  .preset-scroll:focus-within,
+  .browser .list:hover,
+  .browser .list:focus-within,
+  .browser .grid-body:hover,
+  .browser .grid-body:focus-within,
+  .wrap.pf-panel-shell > .grid:hover,
+  .wrap.pf-panel-shell > .grid:focus-within,
+  .panel .list:hover,
+  .panel .list:focus-within,
+  .text-box:hover,
+  .text-box:focus-within,
+  .swap-list:hover,
+  .swap-list:focus-within,
+  .n-input__textarea-el:hover,
+  .n-input__textarea-el:focus,
+  .n-base-select-menu .n-scrollbar-container:hover,
+  .n-dropdown-menu:hover,
+  .n-modal .n-card__content:hover,
+  .n-drawer-body-content-wrapper:hover {
+    scrollbar-color: var(--pf-scrollbar-thumb) transparent;
+  }
+}
+
+.pf-scroll::-webkit-scrollbar,
+.pf-panel-shell .list::-webkit-scrollbar,
+.pf-panel-shell .body::-webkit-scrollbar,
+.pf-panel-shell--rail .rail-body::-webkit-scrollbar,
+.pf-panel-shell--queue .wrap::-webkit-scrollbar,
+.sidebar-content::-webkit-scrollbar,
+.panel-body::-webkit-scrollbar,
+.grid-area::-webkit-scrollbar,
+.selection-dock-strip::-webkit-scrollbar,
+.task-list::-webkit-scrollbar,
+.preset-scroll::-webkit-scrollbar,
+.browser .list::-webkit-scrollbar,
+.browser .grid-body::-webkit-scrollbar,
+.wrap.pf-panel-shell > .grid::-webkit-scrollbar,
+.panel .list::-webkit-scrollbar,
+.text-box::-webkit-scrollbar,
+.swap-list::-webkit-scrollbar,
+.n-input__textarea-el::-webkit-scrollbar {
+  width: var(--pf-scrollbar-size);
+  height: var(--pf-scrollbar-size);
+}
+
+.pf-scroll::-webkit-scrollbar-thumb,
+.pf-panel-shell .list::-webkit-scrollbar-thumb,
+.pf-panel-shell .body::-webkit-scrollbar-thumb,
+.pf-panel-shell--rail .rail-body::-webkit-scrollbar-thumb,
+.pf-panel-shell--queue .wrap::-webkit-scrollbar-thumb,
+.sidebar-content::-webkit-scrollbar-thumb,
+.panel-body::-webkit-scrollbar-thumb,
+.grid-area::-webkit-scrollbar-thumb,
+.selection-dock-strip::-webkit-scrollbar-thumb,
+.task-list::-webkit-scrollbar-thumb,
+.preset-scroll::-webkit-scrollbar-thumb,
+.browser .list::-webkit-scrollbar-thumb,
+.browser .grid-body::-webkit-scrollbar-thumb,
+.wrap.pf-panel-shell > .grid::-webkit-scrollbar-thumb,
+.panel .list::-webkit-scrollbar-thumb,
+.text-box::-webkit-scrollbar-thumb,
+.swap-list::-webkit-scrollbar-thumb,
+.n-input__textarea-el::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  border-radius: 999px;
+  transition: background-color 0.15s ease;
+}
+
+@media (hover: hover) {
+  .pf-scroll:hover::-webkit-scrollbar-thumb,
+  .pf-scroll:focus-within::-webkit-scrollbar-thumb,
+  .pf-panel-shell .list:hover::-webkit-scrollbar-thumb,
+  .pf-panel-shell .list:focus-within::-webkit-scrollbar-thumb,
+  .pf-panel-shell .body:hover::-webkit-scrollbar-thumb,
+  .pf-panel-shell .body:focus-within::-webkit-scrollbar-thumb,
+  .pf-panel-shell--rail .rail-body:hover::-webkit-scrollbar-thumb,
+  .pf-panel-shell--rail .rail-body:focus-within::-webkit-scrollbar-thumb,
+  .pf-panel-shell--queue .wrap:hover::-webkit-scrollbar-thumb,
+  .pf-panel-shell--queue .wrap:focus-within::-webkit-scrollbar-thumb,
+  .sidebar-content:hover::-webkit-scrollbar-thumb,
+  .sidebar-content:focus-within::-webkit-scrollbar-thumb,
+  .panel-body:hover::-webkit-scrollbar-thumb,
+  .panel-body:focus-within::-webkit-scrollbar-thumb,
+  .grid-area:hover::-webkit-scrollbar-thumb,
+  .grid-area:focus-within::-webkit-scrollbar-thumb,
+  .selection-dock-strip:hover::-webkit-scrollbar-thumb,
+  .selection-dock-strip:focus-within::-webkit-scrollbar-thumb,
+  .task-list:hover::-webkit-scrollbar-thumb,
+  .task-list:focus-within::-webkit-scrollbar-thumb,
+  .preset-scroll:hover::-webkit-scrollbar-thumb,
+  .preset-scroll:focus-within::-webkit-scrollbar-thumb,
+  .browser .list:hover::-webkit-scrollbar-thumb,
+  .browser .list:focus-within::-webkit-scrollbar-thumb,
+  .browser .grid-body:hover::-webkit-scrollbar-thumb,
+  .browser .grid-body:focus-within::-webkit-scrollbar-thumb,
+  .wrap.pf-panel-shell > .grid:hover::-webkit-scrollbar-thumb,
+  .wrap.pf-panel-shell > .grid:focus-within::-webkit-scrollbar-thumb,
+  .panel .list:hover::-webkit-scrollbar-thumb,
+  .panel .list:focus-within::-webkit-scrollbar-thumb,
+  .text-box:hover::-webkit-scrollbar-thumb,
+  .text-box:focus-within::-webkit-scrollbar-thumb,
+  .swap-list:hover::-webkit-scrollbar-thumb,
+  .swap-list:focus-within::-webkit-scrollbar-thumb,
+  .n-input__textarea-el:hover::-webkit-scrollbar-thumb,
+  .n-input__textarea-el:focus::-webkit-scrollbar-thumb {
+    background-color: var(--pf-scrollbar-thumb);
+  }
+
+  .pf-scroll:hover::-webkit-scrollbar-thumb:hover,
+  .panel-body:hover::-webkit-scrollbar-thumb:hover,
+  .grid-area:hover::-webkit-scrollbar-thumb:hover {
+    background-color: var(--pf-scrollbar-thumb-hover);
+  }
+}
+
+.pf-scroll::-webkit-scrollbar-track,
+.pf-panel-shell .list::-webkit-scrollbar-track,
+.pf-panel-shell .body::-webkit-scrollbar-track,
+.sidebar-content::-webkit-scrollbar-track,
+.panel-body::-webkit-scrollbar-track,
+.grid-area::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Naive UI custom scrollbars */
+.n-scrollbar:not(:hover) .n-scrollbar-rail:not(:hover):not(:active) {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.n-scrollbar:hover .n-scrollbar-rail:not(.n-scrollbar-rail--disabled),
+.n-scrollbar-rail:not(.n-scrollbar-rail--disabled):hover,
+.n-scrollbar-rail:not(.n-scrollbar-rail--disabled):active {
+  opacity: 1;
+}
+
+.n-scrollbar-rail--disabled {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+@media (hover: none) {
+  .pf-scroll,
+  .pf-panel-shell .list,
+  .pf-panel-shell .body,
+  .pf-panel-shell--rail .rail-body,
+  .pf-panel-shell--queue .wrap,
+  .sidebar-content,
+  .panel-body,
+  .grid-area,
+  .selection-dock-strip,
+  .task-list,
+  .preset-scroll,
+  .browser .list,
+  .browser .grid-body,
+  .wrap.pf-panel-shell > .grid,
+  .panel .list,
+  .text-box,
+  .swap-list,
+  .n-input__textarea-el {
+    scrollbar-color: color-mix(in srgb, var(--pf-scrollbar-thumb) 65%, transparent) transparent;
+  }
+
+  .pf-scroll::-webkit-scrollbar-thumb,
+  .panel-body::-webkit-scrollbar-thumb,
+  .grid-area::-webkit-scrollbar-thumb,
+  .sidebar-content::-webkit-scrollbar-thumb {
+    background-color: color-mix(in srgb, var(--pf-scrollbar-thumb) 65%, transparent);
+  }
+}

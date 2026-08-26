@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
-import { useConvertStore } from '../stores/convert'
-import ConvertImportPanel from '../components/ConvertImportPanel.vue'
-import ConvertGrid from '../components/ConvertGrid.vue'
+import { computed, onMounted } from 'vue'
+import ModuleAssetBrowser from '@/components/module/ModuleAssetBrowser.vue'
+import ModuleTaskQueueShell from '@/components/module/ModuleTaskQueueShell.vue'
 import ConvertTaskQueue from '../components/ConvertTaskQueue.vue'
+import { useConvertStore } from '../stores/convert'
 
 const convert = useConvertStore()
+
+const queueActive = computed(() => convert.jobs.some((j) => j.status === 'queued' || j.status === 'running'))
 
 onMounted(() => {
   if (!convert.settings.outputDir) {
@@ -15,53 +17,25 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="page">
-    <div class="top">
-      <div class="left">
-        <ConvertImportPanel />
-      </div>
-      <div class="center">
-        <ConvertGrid />
-      </div>
+  <div class="pf-page pf-page--with-footer pf-module-workspace pf-module-workspace--single">
+    <div class="pf-page__top">
+      <ModuleAssetBrowser
+        title="转换素材"
+        :items="convert.items"
+        :selected-ids="convert.selectedIds"
+        :loading="convert.loading"
+        default-view="grid"
+        @import-folder="convert.importFolder()"
+        @import-dropped="convert.importDroppedFiles($event)"
+        @toggle="convert.toggleSelect($event)"
+        @clear-selection="convert.clearSelection()"
+        @remove-selected="convert.removeSelected()"
+      />
     </div>
-    <div class="bottom">
-      <ConvertTaskQueue />
+    <div class="pf-page__bottom">
+      <ModuleTaskQueueShell title="导出任务" :job-count="convert.jobs.length" :active="queueActive">
+        <ConvertTaskQueue embedded />
+      </ModuleTaskQueueShell>
     </div>
   </div>
 </template>
-
-<style scoped>
-.page {
-  display: grid;
-  grid-template-rows: 1fr auto;
-  gap: 12px;
-  padding: 12px;
-  height: 100%;
-  min-height: 0;
-  background: var(--pf-bg);
-}
-.top {
-  min-height: 0;
-  display: grid;
-  grid-template-columns: 320px 1fr;
-  gap: 12px;
-}
-.left,
-.center {
-  min-height: 0;
-}
-.bottom {
-  min-height: 0;
-}
-@media (max-width: 1100px) {
-  .top {
-    grid-template-columns: 280px 1fr;
-  }
-}
-@media (max-width: 920px) {
-  .top {
-    grid-template-columns: 1fr;
-    grid-template-rows: 340px 1fr;
-  }
-}
-</style>

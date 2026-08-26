@@ -22,7 +22,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="panel">
+  <div class="pf-panel-shell">
     <div class="panel-head">
       <div class="title">图片列表</div>
       <div class="actions">
@@ -55,23 +55,6 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.panel {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  background: var(--pf-bg-elevated);
-  border: 1px solid var(--pf-border);
-  border-radius: 12px;
-  overflow: hidden;
-}
-.panel-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 12px 10px;
-  border-bottom: 1px solid var(--pf-border);
-  background: var(--pf-bg);
-}
 .title {
   font-size: 13px;
   font-weight: 800;
@@ -81,11 +64,6 @@ onMounted(() => {
   display: flex;
   gap: 8px;
 }
-.search {
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--pf-border);
-  background: var(--pf-bg);
-}
 .empty-wrap {
   padding: 18px 0;
 }
@@ -93,20 +71,6 @@ onMounted(() => {
   flex: 1;
   overflow: auto;
   padding: 8px;
-}
-.row {
-  width: 100%;
-  display: grid;
-  grid-template-columns: 1fr auto;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  border: 1px solid transparent;
-  border-radius: 10px;
-  background: transparent;
-  color: var(--pf-text-secondary);
-  cursor: pointer;
-  text-align: left;
 }
 .row:hover {
   background: var(--pf-bg-hover);
@@ -116,17 +80,6 @@ onMounted(() => {
   background: rgba(0, 122, 255, 0.14);
   border-color: rgba(0, 122, 255, 0.3);
   color: var(--pf-text);
-}
-.name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 700;
-}
-.meta {
-  font-size: 11px;
-  opacity: 0.8;
-  white-space: nowrap;
 }
 </style>
 

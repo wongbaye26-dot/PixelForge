@@ -1,5 +1,6 @@
 import path from 'node:path'
 import sharp from 'sharp'
+import { avifEncodeOptions, jpegEncodeOptions, pngEncodeOptions, webpEncodeOptions } from './encode-utils.js'
 
 export type BatchFit = 'contain' | 'cover' | 'fill' | 'inside' | 'outside'
 
@@ -39,16 +40,16 @@ export default async function processOne(input: BatchProcessorInput): Promise<Ba
   switch (outExt) {
     case 'jpg':
     case 'jpeg':
-      pipeline = pipeline.jpeg({ quality: q, mozjpeg: true })
+      pipeline = pipeline.jpeg(jpegEncodeOptions(q, true))
       break
     case 'png':
-      pipeline = pipeline.png({ compressionLevel: 9 })
+      pipeline = pipeline.png(pngEncodeOptions())
       break
     case 'webp':
-      pipeline = pipeline.webp({ quality: q, effort: 4 })
+      pipeline = pipeline.webp(webpEncodeOptions(q))
       break
     case 'avif':
-      pipeline = pipeline.avif({ quality: q, effort: 4 })
+      pipeline = pipeline.avif(avifEncodeOptions(q))
       break
     case 'gif':
       pipeline = pipeline.gif({ effort: 7, loop: 0 })

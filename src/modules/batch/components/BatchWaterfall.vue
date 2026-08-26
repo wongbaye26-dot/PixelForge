@@ -22,7 +22,7 @@ function openPreview(item: BatchItem) {
 </script>
 
 <template>
-  <div class="wrap">
+  <div class="wrap pf-panel-shell">
     <div v-if="!batch.items.length" class="empty">
       <NEmpty description="请先在左侧导入图片" />
     </div>
@@ -62,13 +62,6 @@ function openPreview(item: BatchItem) {
 </template>
 
 <style scoped>
-.wrap {
-  height: 100%;
-  background: var(--pf-bg-elevated);
-  border: 1px solid var(--pf-border);
-  border-radius: 12px;
-  overflow: hidden;
-}
 .empty {
   height: 100%;
   display: flex;
@@ -82,37 +75,58 @@ function openPreview(item: BatchItem) {
   padding: 14px;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  grid-auto-rows: auto;
+  align-items: start;
   gap: 14px;
 }
 .card {
-  border: 1px solid var(--pf-border);
-  border-radius: 12px;
+  border: var(--pf-border-width) solid color-mix(in srgb, var(--pf-border-color) 82%, transparent);
+  border-radius: var(--pf-radius-lg);
   overflow: hidden;
-  background: var(--pf-bg);
+  background: color-mix(in srgb, var(--pf-bg) 96%, transparent);
   cursor: pointer;
   text-align: left;
   padding: 0;
   display: flex;
   flex-direction: column;
-  box-shadow: var(--pf-shadow);
-  transition: transform 0.15s, border-color 0.15s;
+  width: 100%;
+  min-width: 0;
+  box-shadow: var(--pf-shadow-sm);
+  transition:
+    transform var(--pf-transition-fast) var(--pf-ease-standard),
+    border-color var(--pf-transition-fast) var(--pf-ease-standard),
+    box-shadow var(--pf-transition-fast) var(--pf-ease-standard);
 }
 .card:hover {
   transform: translateY(-2px);
+  box-shadow: var(--pf-shadow-md);
 }
 .card.active {
-  border-color: rgba(0, 122, 255, 0.6);
+  border-color: color-mix(in srgb, var(--pf-primary) 42%, transparent);
+  box-shadow: var(--pf-shadow-glow);
 }
 .thumb-wrap {
   position: relative;
+  width: 100%;
+  height: 108px;
+  flex-shrink: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #121214;
 }
 .thumb {
   width: 100%;
-  aspect-ratio: 4 / 3;
-  object-fit: cover;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
   display: block;
 }
 .thumb.ph {
+  width: 48px;
+  height: 32px;
+  border-radius: 6px;
   background: var(--pf-bg-hover);
 }
 .check {

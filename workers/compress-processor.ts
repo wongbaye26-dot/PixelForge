@@ -1,7 +1,14 @@
 import { existsSync, mkdirSync, statSync } from 'node:fs'
 import path from 'node:path'
-import { spawnSync } from 'node:child_process'
 import sharp from 'sharp'
+import { clamp } from './utils.js'
+import {
+  avifEncodeOptions,
+  jpegEncodeOptions,
+  pngEncodeOptions,
+  webpEncodeOptions,
+  writePngOutput,
+} from './encode-utils.js'
 
 export type CompressFormat = 'jpg' | 'jpeg' | 'png' | 'webp' | 'avif'
 
@@ -23,10 +30,6 @@ export interface CompressProcessorOutput {
   afterBytes: number
   finalQuality?: number
   format: string
-}
-
-function clamp(n: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, n))
 }
 
 function toJpgExt(ext: string): string {
@@ -67,27 +70,20 @@ function encodeOnce(
   switch (format) {
     case 'jpg':
     case 'jpeg':
-      return pipeline.jpeg({ quality: q, mozjpeg })
+      return pipeline.jpeg(jpegEncodeOptions(q, mozjpeg))
     case 'webp':
-      return pipeline.webp({ quality: q, effort: 4 })
+      return pipeline.webp(webpEncodeOptions(q))
     case 'avif':
-      return pipeline.avif({ quality: q, effort: 4 })
+      return pipeline.avif(avifEncodeOptions(q))
     case 'png':
     default:
-      return pipeline.png({ compressionLevel: 9 })
+      return pipeline.png(pngEncodeOptions())
   }
-}
-
-function tryPngquant(inputPath: string, outputPath: string): boolean {
-  const res = spawnSync('pngquant', ['--strip', '--speed', '1', '--force', '--output', outputPath, inputPath], {
-    stdio: 'ignore',
-  })
-  return res.status === 0 && existsSync(outputPath)
 }
 
 export default async function compressOne(input: CompressProcessorInput): Promise<CompressProcessorOutput> {
   const beforeBytes = statSync(input.inputPath).size
-  const mozjpeg = Boolean(input.mozjpeg)
+  const mozjpeg = input.mozjpeg !== false
   const usePngquant = Boolean(input.usePngquant)
 
   const outputFormat = await detectOutputFormat(input.inputPath, input.outputFormat)
@@ -104,15 +100,8 @@ export default async function compressOne(input: CompressProcessorInput): Promis
   let buffer: Buffer
 
   if (outputFormat === 'png') {
-    const base = await encodeOnce(input.inputPath, outputFormat, currentQuality, mozjpeg).toBuffer()
-    if (targetBytes && usePngquant) {
-      const tmp = `${input.outputPath}.tmp.png`
-      await sharp(base).png({ compressionLevel: 9 }).toFile(tmp)
-      const ok = tryPngquant(tmp, input.outputPath)
-      if (!ok) await sharp(base).png({ compressionLevel: 9 }).toFile(input.outputPath)
-    } else {
-      await sharp(base).png({ compressionLevel: 9 }).toFile(input.outputPath)
-    }
+    buffer = await encodeOnce(input.inputPath, outputFormat, currentQuality, mozjpeg).toBuffer()
+    await writePngOutput(buffer, input.outputPath, usePngquant)
     buffer = await sharp(input.outputPath).toBuffer()
   } else {
     buffer = await encodeOnce(input.inputPath, outputFormat, currentQuality, mozjpeg).toBuffer()

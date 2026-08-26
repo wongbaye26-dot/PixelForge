@@ -1,11 +1,19 @@
 <script setup lang="ts">
-import CompressImportPanel from '../components/CompressImportPanel.vue'
+import { computed, onMounted, ref } from 'vue'
+import { NTabs, NTabPane } from 'naive-ui'
+import ModuleAssetBrowser from '@/components/module/ModuleAssetBrowser.vue'
+import ModuleTaskQueueShell from '@/components/module/ModuleTaskQueueShell.vue'
+import { useNarrowWorkspace } from '@/composables/use-narrow-workspace'
 import CompressComparePanel from '../components/CompressComparePanel.vue'
 import CompressTaskQueue from '../components/CompressTaskQueue.vue'
-import { onMounted } from 'vue'
 import { useCompressStore } from '../stores/compress'
 
 const compress = useCompressStore()
+const { narrow } = useNarrowWorkspace()
+const workspaceTab = ref<'assets' | 'compare'>('assets')
+
+const queueActive = computed(() => compress.jobs.some((j) => j.status === 'queued' || j.status === 'running'))
+const activeAssetId = computed(() => compress.activeItem?.id ?? null)
 
 onMounted(() => {
   if (!compress.settings.outputDir) {
@@ -15,53 +23,76 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="page">
-    <div class="top">
-      <div class="left">
-        <CompressImportPanel />
+  <div class="pf-page pf-page--with-footer pf-module-workspace" :class="{ 'pf-module-workspace--narrow': narrow }">
+    <div v-if="!narrow" class="pf-page__top pf-module-workspace__split">
+      <div class="pf-module-workspace__aside">
+        <ModuleAssetBrowser
+          title="压缩素材"
+          :items="compress.items"
+          :selected-ids="compress.selectedIds"
+          :active-id="activeAssetId"
+          :loading="compress.loading"
+          default-view="list"
+          @import-folder="compress.importFolder()"
+          @import-dropped="compress.importDroppedFiles($event)"
+          @toggle="compress.toggleSelect($event)"
+          @set-active="compress.setActive($event)"
+          @clear-selection="compress.clearSelection()"
+          @remove-selected="compress.removeSelected()"
+        />
       </div>
-      <div class="center">
+      <div class="pf-module-workspace__main">
         <CompressComparePanel />
       </div>
     </div>
-    <div class="bottom">
-      <CompressTaskQueue />
+
+    <div v-else class="pf-page__top pf-module-workspace__stacked">
+      <NTabs v-model:value="workspaceTab" type="line" size="small" class="workspace-tabs">
+        <NTabPane name="assets" tab="素材列表">
+          <ModuleAssetBrowser
+            title="压缩素材"
+            :items="compress.items"
+            :selected-ids="compress.selectedIds"
+            :active-id="activeAssetId"
+            :loading="compress.loading"
+            default-view="list"
+            @import-folder="compress.importFolder()"
+            @import-dropped="compress.importDroppedFiles($event)"
+            @toggle="compress.toggleSelect($event)"
+            @set-active="compress.setActive($event)"
+            @clear-selection="compress.clearSelection()"
+            @remove-selected="compress.removeSelected()"
+          />
+        </NTabPane>
+        <NTabPane name="compare" tab="前后对比">
+          <CompressComparePanel />
+        </NTabPane>
+      </NTabs>
+    </div>
+
+    <div class="pf-page__bottom">
+      <ModuleTaskQueueShell title="压缩任务" :job-count="compress.jobs.length" :active="queueActive">
+        <CompressTaskQueue embedded />
+      </ModuleTaskQueueShell>
     </div>
   </div>
 </template>
 
 <style scoped>
-.page {
-  display: grid;
-  grid-template-rows: 1fr auto;
-  gap: 12px;
-  padding: 12px;
+.workspace-tabs {
   height: 100%;
   min-height: 0;
-  background: var(--pf-bg);
+  display: flex;
+  flex-direction: column;
 }
-.top {
+.workspace-tabs :deep(.n-tabs-nav) {
+  flex-shrink: 0;
+  padding: 0 8px;
+}
+.workspace-tabs :deep(.n-tab-pane) {
+  flex: 1;
   min-height: 0;
-  display: grid;
-  grid-template-columns: 320px 1fr;
-  gap: 12px;
-}
-.left,
-.center {
-  min-height: 0;
-}
-.bottom {
-  min-height: 0;
-}
-@media (max-width: 1100px) {
-  .top {
-    grid-template-columns: 280px 1fr;
-  }
-}
-@media (max-width: 920px) {
-  .top {
-    grid-template-columns: 1fr;
-    grid-template-rows: 320px 1fr;
-  }
+  display: flex;
+  flex-direction: column;
 }
 </style>

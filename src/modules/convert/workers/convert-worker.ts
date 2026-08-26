@@ -1,29 +1,30 @@
 import { api } from '@/api/client'
-import type { ConvertJob, ConvertTargetFormat } from '../types'
+import type { ConvertJob } from '../types'
+import { createModuleWorker } from '@/core/module-worker'
 
-export async function submitConvert(payload: {
-  assetIds: number[]
-  targetFormat?: ConvertTargetFormat
-  quality?: number
-  keepExif?: boolean
-  outputDir?: string
-  namingPattern?: string
-}): Promise<{ batchId: string; jobIds: string[] }> {
-  const r = await api.convertSubmit(payload)
-  return { batchId: r.batchId, jobIds: r.jobIds }
+function mapConvertJob(j: Record<string, unknown>): ConvertJob {
+  return {
+    id: j.id as string,
+    batchId: j.batchId as string,
+    assetId: j.assetId as number,
+    status: j.status as ConvertJob['status'],
+    progress: j.progress as number,
+    bytes: j.bytes as number | undefined,
+    format: j.format as string | undefined,
+    outputPath: (j.outputPath as string) ?? '',
+    error: j.error as string | undefined,
+  }
 }
 
-export async function listConvertJobs(batchId: string): Promise<ConvertJob[]> {
-  const r = await api.convertJobs({ batchId })
-  return r.jobs.map((j) => ({
-    id: j.id,
-    batchId: j.batchId,
-    assetId: j.assetId,
-    status: j.status as any,
-    progress: j.progress,
-    bytes: j.bytes,
-    format: j.format,
-    outputPath: j.outputPath,
-    error: j.error,
-  }))
-}
+const worker = createModuleWorker<ConvertJob, Parameters<typeof api.convertSubmit>[0]>({
+  apiSubmit: api.convertSubmit.bind(api),
+  apiList: api.convertJobs.bind(api),
+  apiCancel: api.convertCancel.bind(api),
+  apiRetry: api.convertRetry.bind(api),
+  mapJob: mapConvertJob,
+})
+
+export const submitConvert = worker.submit
+export const listConvertJobs = worker.listJobs
+export const cancelConvertJobs = worker.cancelJobs
+export const retryConvertJob = worker.retryJob

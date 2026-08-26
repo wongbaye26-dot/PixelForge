@@ -63,4 +63,24 @@ await esbuild.build({
   sourcemap: true,
 })
 
+await esbuild.build({
+  entryPoints: ['workers/ai-processor.ts'],
+  bundle: true,
+  platform: 'node',
+  format: 'cjs',
+  outfile: 'electron-dist/ai-processor.cjs',
+  external: ['sharp'],
+  sourcemap: true,
+})
+
+await esbuild.build({
+  entryPoints: ['workers/ocr-processor.ts'],
+  bundle: true,
+  platform: 'node',
+  format: 'cjs',
+  outfile: 'electron-dist/ocr-processor.cjs',
+  external: ['sharp', 'tesseract.js'],
+  sourcemap: true,
+})
+
 console.log('Built electron-dist/server.cjs')

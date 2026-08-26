@@ -14,9 +14,11 @@ export interface ImageAsset {
   size: number
   hash: string
   favorite?: boolean
+  createdAt?: string
   thumbnailUrl?: string
   /** GIF 等动图预览（原文件或动画缩略图） */
   previewUrl?: string
+  ocrText?: string
 }
 
 /** PRD §3.2 — 尺寸解析结果 */
@@ -25,6 +27,8 @@ export interface ParsedSize {
   height: number
   ratio: number
   ratioLabel: string
+  /** 行内注释，如「公众号头图」 */
+  label?: string
 }
 
 export type FitMode =
@@ -36,38 +40,14 @@ export type FitMode =
 
 export type ExportFormat = 'jpg' | 'png' | 'webp' | 'avif' | 'gif' | 'ico' | 'original'
 
-export interface ExportSettings {
-  sizes: ParsedSize[]
-  formats: ExportFormat[]
-  fitMode: FitMode
-  quality: number
-  targetSizeKb?: number
-  namingPattern: string
-  outputDir: string
-}
-
-export interface ExportJob {
-  id: string
-  assetId: number
-  assetPath: string
-  targetWidth: number
-  targetHeight: number
-  format: ExportFormat
-  status: 'pending' | 'running' | 'done' | 'error'
-  progress: number
-  outputPath?: string
-  error?: string
-}
-
-export interface ExportTaskSummary {
-  total: number
-  completed: number
-  failed: number
-  running: boolean
-}
-
 export interface LibraryFolder {
   id: number
   path: string
   label: string
+}
+
+export interface AssetScope {
+  type: 'all' | 'folder' | 'favorite' | 'recent'
+  id?: number
+  name: string
 }

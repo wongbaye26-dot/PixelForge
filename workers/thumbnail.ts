@@ -40,6 +40,12 @@ export interface ThumbnailResult {
   mime: string
 }
 
+export function ensureThumbnailInBackground(filePath: string): void {
+  void ensureThumbnail(filePath).catch((err) => {
+    console.warn('[thumbnail] background generation failed:', filePath, err)
+  })
+}
+
 function purgeStaleGifThumb(paths: ReturnType<typeof thumbFilePaths>) {
   if (existsSync(paths.webp)) {
     try {

@@ -2,7 +2,7 @@ import type { ImageAsset } from '@/types'
 
 export type ConvertTargetFormat = 'png' | 'webp' | 'avif' | 'jpg' | 'jpeg'
 
-export type ConvertJobStatus = 'queued' | 'running' | 'done' | 'error'
+export type ConvertJobStatus = 'queued' | 'running' | 'done' | 'error' | 'cancelled'
 
 export interface ConvertSettings {
   targetFormat: ConvertTargetFormat

@@ -1,20 +1,28 @@
 import { api } from '@/api/client'
-import type { BatchJob, BatchSubmitPayload } from '../types'
+import type { BatchJob } from '../types'
+import { createModuleWorker } from '@/core/module-worker'
 
-export async function submitBatch(payload: BatchSubmitPayload): Promise<{ batchId: string; jobIds: string[] }> {
-  const r = await api.batchSubmit(payload)
-  return { batchId: r.batchId, jobIds: r.jobIds }
+function mapBatchJob(j: Record<string, unknown>): BatchJob {
+  return {
+    id: j.id as string,
+    batchId: j.batchId as string,
+    assetId: j.assetId as number,
+    outputPath: (j.outputPath as string) ?? '',
+    status: j.status as BatchJob['status'],
+    progress: j.progress as number,
+    error: j.error as string | undefined,
+  }
 }
 
-export async function listBatchJobs(batchId: string): Promise<BatchJob[]> {
-  const r = await api.batchJobs({ batchId })
-  return r.jobs.map((j) => ({
-    id: j.id,
-    batchId: j.batchId,
-    assetId: j.assetId,
-    outputPath: j.outputPath,
-    status: j.status as any,
-    progress: j.progress,
-    error: j.error,
-  }))
-}
+const worker = createModuleWorker<BatchJob, Parameters<typeof api.batchSubmit>[0]>({
+  apiSubmit: api.batchSubmit.bind(api),
+  apiList: api.batchJobs.bind(api),
+  apiCancel: api.batchCancel.bind(api),
+  apiRetry: api.batchRetry.bind(api),
+  mapJob: mapBatchJob,
+})
+
+export const submitBatch = worker.submit
+export const listBatchJobs = worker.listJobs
+export const cancelBatchJobs = worker.cancelJobs
+export const retryBatchJob = worker.retryJob

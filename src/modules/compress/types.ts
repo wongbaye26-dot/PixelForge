@@ -2,7 +2,7 @@ import type { ImageAsset } from '@/types'
 
 export type CompressOutputFormat = 'auto' | 'original' | 'jpg' | 'jpeg' | 'png' | 'webp' | 'avif'
 
-export type CompressJobStatus = 'queued' | 'running' | 'done' | 'error'
+export type CompressJobStatus = 'queued' | 'running' | 'done' | 'error' | 'cancelled'
 
 export interface CompressSettings {
   outputFormat: CompressOutputFormat

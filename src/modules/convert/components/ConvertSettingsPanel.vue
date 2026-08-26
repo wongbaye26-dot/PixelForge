@@ -18,21 +18,22 @@ const canStart = computed(() => convert.selectedIds.size > 0 && !convert.loading
 </script>
 
 <template>
-  <div class="panel">
+  <div class="pf-panel-shell pf-panel-shell--rail">
     <div class="head">
       <div class="title">转换参数</div>
       <NButton size="small" secondary @click="convert.chooseOutputDir()">选择导出目录</NButton>
     </div>
 
-    <div class="section">
-      <div class="row">
-        <div class="label">导出目录</div>
-        <div class="value path" :title="convert.settings.outputDir">{{ convert.settings.outputDir || '未选择' }}</div>
+    <div class="rail-body">
+      <div class="section">
+        <div class="row">
+          <div class="label">导出目录</div>
+          <div class="value path" :title="convert.settings.outputDir">{{ convert.settings.outputDir || '未选择' }}</div>
+        </div>
       </div>
-    </div>
 
-    <div class="section">
-      <div class="sec-title">转换目标</div>
+      <div class="section">
+        <div class="sec-title">转换目标</div>
       <div class="row">
         <NSelect v-model:value="convert.settings.targetFormat" size="small" :options="fmtOptions" />
       </div>
@@ -55,6 +56,7 @@ const canStart = computed(() => convert.selectedIds.size > 0 && !convert.loading
         <NInput v-model:value="convert.settings.namingPattern" size="small" placeholder="{name}.{format}" />
       </div>
     </div>
+    </div>
 
     <div class="footer">
       <NButton type="primary" :disabled="!canStart" @click="convert.startConvert()">
@@ -65,40 +67,6 @@ const canStart = computed(() => convert.selectedIds.size > 0 && !convert.loading
 </template>
 
 <style scoped>
-.panel {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  background: var(--pf-bg-elevated);
-  border: 1px solid var(--pf-border);
-  border-radius: 12px;
-  overflow: hidden;
-}
-.head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 12px 10px;
-  border-bottom: 1px solid var(--pf-border);
-  background: var(--pf-bg);
-}
-.title {
-  font-size: 13px;
-  font-weight: 900;
-  color: var(--pf-text);
-}
-.section {
-  padding: 12px;
-  border-bottom: 1px solid var(--pf-border);
-}
-.sec-title {
-  font-size: 11px;
-  font-weight: 800;
-  color: var(--pf-text-secondary);
-  margin-bottom: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
 .row {
   display: flex;
   align-items: center;
@@ -129,10 +97,5 @@ const canStart = computed(() => convert.selectedIds.size > 0 && !convert.loading
   color: var(--pf-text);
   min-width: 28px;
   text-align: right;
-}
-.footer {
-  margin-top: auto;
-  padding: 12px;
-  background: var(--pf-bg);
 }
 </style>

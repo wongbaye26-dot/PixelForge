@@ -5,3 +5,7 @@ export async function requestEditPreview(assetId: number, params: Partial<EditPa
   return api.editPreview({ assetId, params })
 }
 
+export async function requestEditExport(assetIds: number[], params: Partial<EditParams>, outputDir?: string) {
+  return api.editExport({ assetIds, params, outputDir })
+}
+

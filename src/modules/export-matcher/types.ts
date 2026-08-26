@@ -1,40 +1,11 @@
 import type { ExportFormat, FitMode, ImageAsset } from '@/types'
+import type { MatchScore, MatchDebugCandidate } from '@/core/match-scoring'
+
+export type { MatchScore, MatchDebugCandidate }
 
 export interface TargetSize {
   width: number
   height: number
-}
-
-export interface FocalPoint {
-  x: number
-  y: number
-}
-
-export type BackgroundMode = 'solid' | 'gradient' | 'transparent'
-
-export interface MatchScore {
-  ratioScore: number
-  sizeScore: number
-  upscalePenalty: number
-  oversizePenalty: number
-  finalScore: number
-}
-
-export interface MatchDebugCandidate {
-  imageId: number
-  width: number
-  height: number
-  ratio: number
-  area: number
-  score: MatchScore
-}
-
-export interface MatchResult {
-  imageId: number
-  similarity: number
-  targetRatio: number
-  imageRatio: number
-  recommendedMode: FitMode
 }
 
 export interface ExportMatcherJob {
@@ -50,7 +21,7 @@ export interface ExportMatcherJob {
   recommendedMode: FitMode
   matchScore?: MatchScore
   debugCandidates?: MatchDebugCandidate[]
-  status: 'pending' | 'processing' | 'done' | 'error'
+  status: 'pending' | 'processing' | 'done' | 'error' | 'cancelled'
   progress: number
   outputPath?: string
   previewName?: string
@@ -73,6 +44,14 @@ export interface ExportMatcherSubmitPayload {
   highQualityFirst?: boolean
   debugMode?: boolean
   candidateAssetIds?: number[]
+  scopeType?: 'all' | 'folder' | 'favorite' | 'recent'
+  scopeId?: number
+}
+
+export interface ExportMatcherSubmitResult {
+  batchId: string
+  jobs: ExportMatcherJob[]
+  unmatchedSizes: Array<{ width: number; height: number }>
 }
 
 export interface ExportMatcherState {

@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import { NEmpty, NProgress } from 'naive-ui'
-import { computed } from 'vue'
+import { NEmpty, NProgress, NTabPane, NTabs } from 'naive-ui'
+import { computed, ref } from 'vue'
 import { resolveMediaUrl } from '@/utils/media-url'
+import { useNarrowWorkspace } from '@/composables/use-narrow-workspace'
 import { useCompressStore } from '../stores/compress'
 
 const compress = useCompressStore()
+const { narrow } = useNarrowWorkspace()
+const compareTab = ref<'before' | 'after'>('before')
 
 const beforeSrc = computed(() =>
   compress.activeItem ? resolveMediaUrl(`/api/assets/${compress.activeItem.id}/preview`) : undefined,
@@ -18,7 +21,7 @@ const afterSrc = computed(() => {
 </script>
 
 <template>
-  <div class="panel">
+  <div class="pf-panel-shell">
     <div class="head">
       <div class="title">压缩前后对比</div>
       <div class="sub">{{ compress.activeItem?.filename || '未选择图片' }}</div>
@@ -29,11 +32,18 @@ const afterSrc = computed(() => {
     </div>
 
     <div v-else class="body">
-      <div class="compare">
-        <div class="box">
-          <div class="box-head">Before</div>
-          <div class="img-wrap">
-            <img v-if="beforeSrc" :src="beforeSrc" class="img" />
+      <div v-if="narrow" class="compare-tabs">
+        <NTabs v-model:value="compareTab" type="segment" size="small">
+          <NTabPane name="before" tab="原图" />
+          <NTabPane name="after" tab="压缩后" />
+        </NTabs>
+      </div>
+
+      <div class="compare" :class="{ stacked: narrow }">
+        <div v-show="!narrow || compareTab === 'before'" class="box">
+          <div class="box-head">原图</div>
+          <div class="img-wrap pf-compare-canvas">
+            <img v-if="beforeSrc" :src="beforeSrc" class="img" alt="" />
           </div>
           <div class="meta">
             <span>{{ compress.activeItem.width }}×{{ compress.activeItem.height }}</span>
@@ -41,10 +51,10 @@ const afterSrc = computed(() => {
           </div>
         </div>
 
-        <div class="box">
-          <div class="box-head">After</div>
-          <div class="img-wrap">
-            <img v-if="afterSrc" :src="afterSrc" class="img" />
+        <div v-show="!narrow || compareTab === 'after'" class="box">
+          <div class="box-head">压缩后</div>
+          <div class="img-wrap pf-compare-canvas">
+            <img v-if="afterSrc" :src="afterSrc" class="img" alt="" />
             <div v-else class="ph">未生成</div>
           </div>
           <div class="meta">
@@ -84,15 +94,6 @@ const afterSrc = computed(() => {
 </template>
 
 <style scoped>
-.panel {
-  height: 100%;
-  background: var(--pf-bg-elevated);
-  border: 1px solid var(--pf-border);
-  border-radius: 12px;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
 .head {
   padding: 12px 14px 10px;
   border-bottom: 1px solid var(--pf-border);
@@ -133,6 +134,14 @@ const afterSrc = computed(() => {
   gap: 12px;
   padding: 12px;
 }
+.compare.stacked {
+  grid-template-columns: 1fr;
+  padding-top: 8px;
+}
+.compare-tabs {
+  padding: 8px 12px 0;
+  flex-shrink: 0;
+}
 .box {
   background: var(--pf-bg);
   border: 1px solid var(--pf-border);
@@ -154,7 +163,6 @@ const afterSrc = computed(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #0f0f10;
 }
 .img {
   max-width: 100%;
@@ -207,9 +215,6 @@ const afterSrc = computed(() => {
   align-items: center;
 }
 @media (max-width: 980px) {
-  .compare {
-    grid-template-columns: 1fr;
-  }
   .stats {
     grid-template-columns: 1fr;
   }

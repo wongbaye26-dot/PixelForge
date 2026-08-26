@@ -1,12 +1,16 @@
 <script setup lang="ts">
-import { NEmpty, NSpin, NButton } from 'naive-ui'
+import { NEmpty, NSpin, NButton, NTabPane, NTabs } from 'naive-ui'
+import { ref } from 'vue'
+import { useNarrowWorkspace } from '@/composables/use-narrow-workspace'
 import { useEditStore } from '../stores/edit'
 
 const edit = useEditStore()
+const { narrow } = useNarrowWorkspace()
+const compareTab = ref<'before' | 'after'>('before')
 </script>
 
 <template>
-  <div class="panel">
+  <div class="pf-panel-shell">
     <div class="head">
       <div class="title">实时预览</div>
       <div class="actions">
@@ -21,18 +25,24 @@ const edit = useEditStore()
     </div>
 
     <div v-else class="body">
-      <div class="grid">
-        <div class="box">
-          <div class="box-head">Before</div>
-          <div class="img-wrap">
-            <img v-if="edit.beforeSrc" :src="edit.beforeSrc" class="img" />
+      <div v-if="narrow" class="compare-tabs">
+        <NTabs v-model:value="compareTab" type="segment" size="small">
+          <NTabPane name="before" tab="原图" />
+          <NTabPane name="after" tab="处理后" />
+        </NTabs>
+      </div>
+      <div class="grid" :class="{ stacked: narrow }">
+        <div v-show="!narrow || compareTab === 'before'" class="box">
+          <div class="box-head">原图</div>
+          <div class="img-wrap pf-compare-canvas">
+            <img v-if="edit.beforeSrc" :src="edit.beforeSrc" class="img" alt="" />
           </div>
         </div>
-        <div class="box">
-          <div class="box-head">After</div>
-          <div class="img-wrap">
+        <div v-show="!narrow || compareTab === 'after'" class="box">
+          <div class="box-head">处理后</div>
+          <div class="img-wrap pf-compare-canvas">
             <NSpin v-if="edit.generating" size="small" />
-            <img v-else-if="edit.afterSrc" :src="edit.afterSrc" class="img" />
+            <img v-else-if="edit.afterSrc" :src="edit.afterSrc" class="img" alt="" />
             <div v-else class="ph">等待生成…</div>
           </div>
         </div>
@@ -42,15 +52,6 @@ const edit = useEditStore()
 </template>
 
 <style scoped>
-.panel {
-  height: 100%;
-  background: var(--pf-bg-elevated);
-  border: 1px solid var(--pf-border);
-  border-radius: 12px;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
 .head {
   padding: 12px 14px 10px;
   border-bottom: 1px solid var(--pf-border);
@@ -85,6 +86,14 @@ const edit = useEditStore()
   gap: 12px;
   padding: 12px;
 }
+.grid.stacked {
+  grid-template-columns: 1fr;
+  padding-top: 8px;
+}
+.compare-tabs {
+  padding: 8px 12px 0;
+  flex-shrink: 0;
+}
 .box {
   background: var(--pf-bg);
   border: 1px solid var(--pf-border);
@@ -106,7 +115,6 @@ const edit = useEditStore()
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #0f0f10;
   position: relative;
 }
 .img {
@@ -118,11 +126,6 @@ const edit = useEditStore()
   color: rgba(255, 255, 255, 0.7);
   font-size: 12px;
   font-weight: 700;
-}
-@media (max-width: 980px) {
-  .grid {
-    grid-template-columns: 1fr;
-  }
 }
 </style>
 

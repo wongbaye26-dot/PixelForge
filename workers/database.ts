@@ -2,6 +2,7 @@ import Database from 'better-sqlite3'
 import { createHash } from 'node:crypto'
 import path from 'node:path'
 import { getDatabaseDir } from './paths.js'
+import { seedExportTemplates } from './templates-data.js'
 
 const DB_PATH = path.join(getDatabaseDir(), 'pixel-forge.db')
 
@@ -57,8 +58,17 @@ export function getDb(): Database.Database {
   if (!has.has('resolution_level')) {
     db.exec(`ALTER TABLE assets ADD COLUMN resolution_level INTEGER;`)
   }
+  if (!has.has('deleted_at')) {
+    db.exec(`ALTER TABLE assets ADD COLUMN deleted_at TEXT;`)
+  }
+  if (!has.has('ocr_text')) {
+    db.exec(`ALTER TABLE assets ADD COLUMN ocr_text TEXT;`)
+  }
   db.exec(`CREATE INDEX IF NOT EXISTS idx_assets_ratio ON assets(ratio);`)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_assets_ratio_area ON assets(ratio, area);`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_assets_deleted_at ON assets(deleted_at);`)
+
+  seedExportTemplates(db)
 
   return db
 }

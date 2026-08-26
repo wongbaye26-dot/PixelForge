@@ -1,14 +1,10 @@
 <script setup lang="ts">
-import { onMounted, computed, watchEffect } from 'vue'
-import { NConfigProvider, darkTheme, NMessageProvider } from 'naive-ui'
+import { computed, watchEffect } from 'vue'
+import { NConfigProvider, darkTheme, NMessageProvider, NDialogProvider } from 'naive-ui'
 import type { GlobalThemeOverrides } from 'naive-ui'
 import AppLayout from '@/components/layout/AppLayout.vue'
-import { useLibraryStore } from '@/stores/library'
-import { useExportStore } from '@/stores/export'
 import { useUiStore } from '@/stores/ui'
 
-const library = useLibraryStore()
-const exportStore = useExportStore()
 const ui = useUiStore()
 
 const themeOverrides = computed<GlobalThemeOverrides>(() => {
@@ -68,10 +64,6 @@ const themeOverrides = computed<GlobalThemeOverrides>(() => {
 watchEffect(() => {
   document.documentElement.setAttribute('data-theme', ui.isDark ? 'dark' : 'light')
 })
-
-onMounted(async () => {
-  await Promise.all([library.refresh(), exportStore.loadExportDir()])
-})
 </script>
 
 <template>
@@ -80,7 +72,9 @@ onMounted(async () => {
     :theme-overrides="themeOverrides"
   >
     <NMessageProvider>
-      <AppLayout />
+      <NDialogProvider>
+        <AppLayout />
+      </NDialogProvider>
     </NMessageProvider>
   </NConfigProvider>
 </template>

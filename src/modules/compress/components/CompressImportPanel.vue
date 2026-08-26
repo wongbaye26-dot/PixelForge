@@ -11,16 +11,29 @@ const filtered = computed(() => {
   if (!term) return compress.items
   return compress.items.filter((a) => a.filename.toLowerCase().includes(term))
 })
+
+async function onDrop(ev: DragEvent) {
+  const files = Array.from(ev.dataTransfer?.files ?? [])
+  const paths = files
+    .map((f) => (f as File & { path?: string }).path)
+    .filter((p): p is string => Boolean(p && p.trim()))
+  if (!paths.length) return
+  await compress.importDroppedFiles(paths)
+}
 </script>
 
 <template>
-  <div class="panel">
+  <div class="pf-panel-shell">
     <div class="panel-head">
       <div class="title">图片列表</div>
       <div class="actions">
         <NButton size="small" secondary :loading="compress.loading" @click="compress.importFolder()">导入文件夹</NButton>
-        <NButton size="small" secondary @click="compress.loadMock()">示例数据</NButton>
       </div>
+    </div>
+
+    <div class="drop" @dragover.prevent @drop.prevent="onDrop">
+      <div class="drop-title">拖拽图片到这里导入</div>
+      <div class="drop-sub">支持多选拖拽</div>
     </div>
 
     <div class="search">
@@ -54,114 +67,9 @@ const filtered = computed(() => {
           清空
         </NButton>
         <NButton size="small" secondary type="error" :disabled="!compress.selectedIds.size" @click="compress.removeSelected()">
-          删除
+          移出列表
         </NButton>
       </div>
     </div>
   </div>
 </template>
-
-<style scoped>
-.panel {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  background: var(--pf-bg-elevated);
-  border: 1px solid var(--pf-border);
-  border-radius: 12px;
-  overflow: hidden;
-}
-.panel-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 12px 10px;
-  border-bottom: 1px solid var(--pf-border);
-  background: var(--pf-bg);
-}
-.title {
-  font-size: 13px;
-  font-weight: 800;
-  color: var(--pf-text);
-}
-.actions {
-  display: flex;
-  gap: 8px;
-}
-.search {
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--pf-border);
-  background: var(--pf-bg);
-}
-.empty-wrap {
-  padding: 18px 0;
-}
-.list {
-  flex: 1;
-  overflow: auto;
-  padding: 8px;
-}
-.row {
-  width: 100%;
-  display: grid;
-  grid-template-columns: 18px 1fr auto;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  border: 1px solid transparent;
-  border-radius: 10px;
-  background: transparent;
-  color: var(--pf-text-secondary);
-  cursor: pointer;
-  text-align: left;
-}
-.row:hover {
-  background: var(--pf-bg-hover);
-  color: var(--pf-text);
-}
-.row.active {
-  background: rgba(0, 122, 255, 0.14);
-  border-color: rgba(0, 122, 255, 0.3);
-  color: var(--pf-text);
-}
-.check {
-  width: 18px;
-  height: 18px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 6px;
-  border: 1px solid var(--pf-border);
-  background: var(--pf-bg);
-  color: var(--pf-primary);
-  font-size: 12px;
-  font-weight: 900;
-}
-.name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 600;
-}
-.meta {
-  font-size: 11px;
-  opacity: 0.8;
-}
-.panel-foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 12px;
-  border-top: 1px solid var(--pf-border);
-  background: var(--pf-bg);
-}
-.sel {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--pf-text);
-}
-.foot-actions {
-  display: flex;
-  gap: 8px;
-}
-</style>

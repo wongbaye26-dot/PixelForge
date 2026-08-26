@@ -2,46 +2,41 @@
 import { NButton, NCheckbox, NInput, NInputNumber, NSelect, NSlider } from 'naive-ui'
 import { computed } from 'vue'
 import { useBatchStore } from '../stores/batch'
-import type { BatchFit, BatchFormat } from '../types'
+import type { BatchFit } from '../types'
+import { FORMAT_OPTIONS } from '@/core/format-options'
 
 const batch = useBatchStore()
 
 const fitOptions: Array<{ label: string; value: BatchFit }> = [
-  { label: 'Contain', value: 'contain' },
-  { label: 'Cover', value: 'cover' },
-  { label: 'Fill', value: 'fill' },
-  { label: 'Inside', value: 'inside' },
-  { label: 'Outside', value: 'outside' },
+  { label: '适应', value: 'contain' },
+  { label: '覆盖', value: 'cover' },
+  { label: '填充', value: 'fill' },
+  { label: '内适应', value: 'inside' },
+  { label: '外适应', value: 'outside' },
 ]
 
-const formatOptions: Array<{ label: string; value: BatchFormat }> = [
-  { label: '原图格式', value: 'original' },
-  { label: 'JPG', value: 'jpg' },
-  { label: 'PNG', value: 'png' },
-  { label: 'WebP', value: 'webp' },
-  { label: 'AVIF', value: 'avif' },
-  { label: 'GIF', value: 'gif' },
-]
+const formatOptions = FORMAT_OPTIONS
 
 const canStart = computed(() => batch.selectedIds.size > 0 && !batch.loading)
 </script>
 
 <template>
-  <div class="panel">
+  <div class="pf-panel-shell pf-panel-shell--rail">
     <div class="head">
       <div class="title">批量设置</div>
       <NButton size="small" secondary @click="batch.chooseOutputDir()">选择输出目录</NButton>
     </div>
 
-    <div class="section">
-      <div class="row">
-        <div class="label">输出目录</div>
-        <div class="value path" :title="batch.settings.outputDir">{{ batch.settings.outputDir || '未选择' }}</div>
+    <div class="rail-body">
+      <div class="section">
+        <div class="row">
+          <div class="label">输出目录</div>
+          <div class="value path" :title="batch.settings.outputDir">{{ batch.settings.outputDir || '未选择' }}</div>
+        </div>
       </div>
-    </div>
 
-    <div class="section">
-      <div class="sec-title">尺寸设置</div>
+      <div class="section">
+        <div class="sec-title">尺寸设置</div>
       <div class="row">
         <NCheckbox v-model:checked="batch.settings.resize.enabled">启用 Resize</NCheckbox>
       </div>
@@ -56,7 +51,7 @@ const canStart = computed(() => batch.selectedIds.size > 0 && !batch.loading)
         </div>
       </div>
       <div class="row">
-        <div class="label">Fit</div>
+        <div class="label">适配模式</div>
         <NSelect v-model:value="batch.settings.resize.fit" size="small" :options="fitOptions" :disabled="!batch.settings.resize.enabled" />
       </div>
     </div>
@@ -82,6 +77,7 @@ const canStart = computed(() => batch.selectedIds.size > 0 && !batch.loading)
         <NInput v-model:value="batch.settings.namingPattern" size="small" placeholder="{name}_{op}.{format}" />
       </div>
     </div>
+    </div>
 
     <div class="footer">
       <NButton type="primary" :disabled="!canStart" @click="batch.startExport()">
@@ -92,40 +88,6 @@ const canStart = computed(() => batch.selectedIds.size > 0 && !batch.loading)
 </template>
 
 <style scoped>
-.panel {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  background: var(--pf-bg-elevated);
-  border: 1px solid var(--pf-border);
-  border-radius: 12px;
-  overflow: hidden;
-}
-.head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 12px 10px;
-  border-bottom: 1px solid var(--pf-border);
-  background: var(--pf-bg);
-}
-.title {
-  font-size: 13px;
-  font-weight: 900;
-  color: var(--pf-text);
-}
-.section {
-  padding: 12px;
-  border-bottom: 1px solid var(--pf-border);
-}
-.sec-title {
-  font-size: 11px;
-  font-weight: 800;
-  color: var(--pf-text-secondary);
-  margin-bottom: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
 .row {
   display: flex;
   align-items: center;
@@ -164,10 +126,5 @@ const canStart = computed(() => batch.selectedIds.size > 0 && !batch.loading)
   color: var(--pf-text);
   min-width: 28px;
   text-align: right;
-}
-.footer {
-  margin-top: auto;
-  padding: 12px;
-  background: var(--pf-bg);
 }
 </style>

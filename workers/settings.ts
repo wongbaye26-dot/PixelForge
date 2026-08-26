@@ -3,6 +3,11 @@ import { mkdirSync } from 'node:fs'
 import { getExportsDir } from './paths.js'
 
 const EXPORT_DIR_KEY = 'export_dir'
+const AI_SIDECAR_KEY = 'ai_sidecar_url'
+
+export function getAiSidecarUrl(db: Database.Database): string | undefined {
+  return getStoredSetting(db, AI_SIDECAR_KEY) || process.env.PIXELFORGE_AI_SIDECAR_URL
+}
 
 export function getStoredExportDir(db: Database.Database): string {
   return getStoredSetting(db, EXPORT_DIR_KEY) || getExportsDir()

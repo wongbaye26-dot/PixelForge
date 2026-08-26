@@ -12,6 +12,8 @@ cache/
 exports/*
 !exports/.gitkeep
 
-src-tauri/target/
-
 *.log
+
+# Temp and data files
+.tmp/
+*.traineddata
