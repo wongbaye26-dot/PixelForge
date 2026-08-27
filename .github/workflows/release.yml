@@ -20,44 +20,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - run: npm ci
       - run: npm run build:mac
-      - uses: actions/upload-artifact@v4
-        with:
-          name: mac-dmg
-          path: |
-            release/*.dmg
-            release/*.blockmap
-          retention-days: 5
-
-  build-win:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-      - run: npm ci
-      - run: npm run build:win
-      - uses: actions/upload-artifact@v4
-        with:
-          name: win-zip
-          path: release/*.zip
-          retention-days: 5
-
-  release:
-    needs: [build-mac, build-win]
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-      - name: Create Release
+      - name: Publish DMGs to Release
         uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
         with:
           tag_name: ${{ github.event.inputs.tag || github.ref_name }}
           name: "PixelForge ${{ github.event.inputs.tag || github.ref_name }}"
@@ -65,6 +34,26 @@ jobs:
           prerelease: false
           generate_release_notes: true
           files: |
-            artifacts/mac-dmg/*.dmg
-            artifacts/mac-dmg/*.blockmap
-            artifacts/win-zip/*.zip
+            release/*.dmg
+            release/*.blockmap
+
+  build-win:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build:win
+      - name: Publish ZIP to Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: "PixelForge ${{ github.event.inputs.tag || github.ref_name }}"
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: release/*.zip

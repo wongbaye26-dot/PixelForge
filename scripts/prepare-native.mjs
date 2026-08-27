@@ -16,6 +16,8 @@ if (!platform || !arch) {
   process.exit(1)
 }
 
+const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm'
+
 function sharpPkg(platform, arch) {
   return [
     `@img/sharp-${platform}-${arch}@0.34.5`,
@@ -29,9 +31,9 @@ for (const pkg of sharpPkg(platform, arch)) {
   if (existsSync(installed)) continue
   console.log(`[prepare-native] installing ${pkg}`)
   execFileSync(
-    'npm',
+    npm,
     ['install', '--no-save', '--force', '--os', platform, '--cpu', arch, pkg],
-    { cwd: root, stdio: 'inherit' },
+    { cwd: root, stdio: 'inherit', shell: process.platform === 'win32' },
   )
 }
 
